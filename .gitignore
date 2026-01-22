@@ -201,6 +201,44 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# ROS2
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Colcon
+.colcon/
+
+# Editor 
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CMake
+compile_commands.json
+cmake-build-*/
+
+# Temporary
+*.orig
+*.autosave
+*_BACKUP_*
+*.BACKUP*
+*_LOCAL_*
+*.LOCAL*
+*_REMOTE_*
+*.REMOTE*
+*_BASE_*
+*.BASE*
+
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
