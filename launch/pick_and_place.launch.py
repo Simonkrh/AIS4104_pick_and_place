@@ -9,7 +9,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     use_realsense = LaunchConfiguration("use_realsense")
-    use_usb_cam = LaunchConfiguration("use_usb_cam")
+    use_sony_cam = LaunchConfiguration("use_sony_cam")
 
     video_device = LaunchConfiguration("video_device")
     pixel_format = LaunchConfiguration("pixel_format")
@@ -36,7 +36,7 @@ def generate_launch_description():
         condition=IfCondition(use_realsense),
         launch_arguments={
             "camera_namespace": "",
-            "camera_name": "camera",
+            "camera_name": "realsense_cam",
             "align_depth.enable": align_depth_enable,
             "pointcloud.enable": pointcloud_enable,
             "depth_module.profile": depth_profile,
@@ -46,12 +46,12 @@ def generate_launch_description():
         }.items(),
     )
 
-    usb_cam = Node(
+    sony_cam = Node(
         package="usb_cam",
         executable="usb_cam_node_exe",
-        name="usb_cam",
+        name="sony_cam",
         output="screen",
-        condition=IfCondition(use_usb_cam),
+        condition=IfCondition(use_sony_cam),
         parameters=[
             {"video_device": video_device},
             {"pixel_format": pixel_format},
@@ -60,8 +60,8 @@ def generate_launch_description():
             {"framerate": framerate},
         ],
         remappings=[
-            ("image_raw", "/usb_cam/image_raw"),
-            ("camera_info", "/usb_cam/camera_info"),
+            ("image_raw", "/sony_cam/image_raw"),
+            ("camera_info", "/sony_cam/camera_info"),
         ],
     )
 
@@ -88,13 +88,13 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_realsense", default_value="true"),
-            DeclareLaunchArgument("use_usb_cam", default_value="true"),
-            DeclareLaunchArgument("video_device", default_value="/dev/usb_camera"),
+            DeclareLaunchArgument("use_sony_cam", default_value="true"),
+            DeclareLaunchArgument("video_device", default_value="/dev/sony_camera"),
             DeclareLaunchArgument("pixel_format", default_value="mjpeg2rgb"),
             DeclareLaunchArgument("image_width", default_value="1920"),
             DeclareLaunchArgument("image_height", default_value="1080"),
             DeclareLaunchArgument("framerate", default_value="30.0"),
-            DeclareLaunchArgument("image_topic", default_value="/usb_cam/image_raw"),
+            DeclareLaunchArgument("image_topic", default_value="/sony_cam/image_raw"),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),
             DeclareLaunchArgument("depth_profile", default_value="640x480x30"),
@@ -104,7 +104,7 @@ def generate_launch_description():
             DeclareLaunchArgument("conf", default_value="0.4"),
             DeclareLaunchArgument("device", default_value="cpu"),
             realsense_launch,
-            usb_cam,
+            sony_cam,
             yolo,
             opencv,
         ]

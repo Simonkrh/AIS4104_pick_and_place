@@ -57,9 +57,9 @@ colcon build --symlink-install --packages-up-to realsense2_camera
 colcon build --symlink-install
 ```
 
-## 5) Configure Stable USB Camera Alias (`/dev/usb_camera`)
+## 5) Configure Stable Sony Camera Alias (`/dev/sony_camera`)
 
-Run once per machine so `video_device:=/dev/usb_camera` is stable.
+Run once per machine so `video_device:=/dev/sony_camera` is stable.
 Note: this rule matches the camera used in this project (`idVendor=0bda`, `idProduct=5805`). If another camera is used, replace those values with the device IDs:
 
 ```bash
@@ -69,18 +69,18 @@ lsusb
 Then create the udev rule:
 
 ```bash
-sudo tee /etc/udev/rules.d/99-usb-camera.rules >/dev/null <<'EOF2'
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="5805", ATTR{index}=="0", SYMLINK+="usb_camera"
+sudo tee /etc/udev/rules.d/99-sony-camera.rules >/dev/null <<'EOF2'
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="5805", ATTR{index}=="0", SYMLINK+="sony_camera"
 EOF2
 
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-Then unplug/replug the USB camera and verify:
+Then unplug/replug the Sony camera and verify:
 
 ```bash
-ls -l /dev/usb_camera
+ls -l /dev/sony_camera
 ```
 
 ## 6) Source Environment
@@ -101,13 +101,13 @@ ros2 launch ./launch/pick_and_place.launch.py
 
 ## 8) Common Launch Modes
 
-### YOLO/OpenCV on USB image, RealSense for depth/pointcloud (default behavior)
+### YOLO/OpenCV on Sony image, RealSense for depth/pointcloud (default behavior)
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
   use_realsense:=true \
-  use_usb_cam:=true \
-  image_topic:=/usb_cam/image_raw
+  use_sony_cam:=true \
+  image_topic:=/sony_cam/image_raw
 ```
 
 ### RealSense only (YOLO/OpenCV use RealSense color image)
@@ -115,17 +115,17 @@ ros2 launch ./launch/pick_and_place.launch.py \
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
   use_realsense:=true \
-  use_usb_cam:=false \
-  image_topic:=/camera/color/image_raw
+  use_sony_cam:=false \
+  image_topic:=/realsense_cam/color/image_raw
 ```
 
-### USB camera only (no RealSense node)
+### Sony camera only (no RealSense node)
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
   use_realsense:=false \
-  use_usb_cam:=true \
-  image_topic:=/usb_cam/image_raw
+  use_sony_cam:=true \
+  image_topic:=/sony_cam/image_raw
 ```
 
 ### Pointcloud ON with true RGB texture (real color)
