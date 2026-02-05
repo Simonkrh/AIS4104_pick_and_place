@@ -89,18 +89,16 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("use_realsense", default_value="true"),
             DeclareLaunchArgument("use_usb_cam", default_value="true"),
-            DeclareLaunchArgument("video_device", default_value="/dev/video0"),
+            DeclareLaunchArgument("video_device", default_value="/dev/usb_camera"),
             DeclareLaunchArgument("pixel_format", default_value="mjpeg2rgb"),
             DeclareLaunchArgument("image_width", default_value="1920"),
             DeclareLaunchArgument("image_height", default_value="1080"),
             DeclareLaunchArgument("framerate", default_value="30.0"),
-            # Keep perception on USB camera by default; RealSense is used for depth/pointcloud
             DeclareLaunchArgument("image_topic", default_value="/usb_cam/image_raw"),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),
             DeclareLaunchArgument("depth_profile", default_value="640x480x30"),
             DeclareLaunchArgument("rgb_profile", default_value="1280x720x30"),
-            # Use "Any" texture stream by default to avoid repeated "No stream match ... Color" warnings
             DeclareLaunchArgument("pointcloud_stream_filter", default_value="0"),
             DeclareLaunchArgument("pointcloud_stream_index_filter", default_value="0"),
             DeclareLaunchArgument("conf", default_value="0.4"),

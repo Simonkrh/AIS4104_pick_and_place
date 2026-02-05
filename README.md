@@ -1,7 +1,10 @@
 # AIS4104 Pick and Place
 
-## RealSense driver
+## 1) Install RealSense Driver (librealsense)
 
+Build and install `librealsense` from source (version `v2.50.0`):
+
+```bash
 cd ~
 git clone https://github.com/IntelRealSense/librealsense.git
 cd librealsense
@@ -9,82 +12,123 @@ git checkout v2.50.0
 rm -rf build
 mkdir build && cd build
 cmake .. \
- -DCMAKE_BUILD_TYPE=Release \
- -DFORCE_RSUSB_BACKEND=ON \
- -DBUILD_EXAMPLES=true \
- -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFORCE_RSUSB_BACKEND=ON \
+  -DBUILD_EXAMPLES=true \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 make -j"$(nproc)"
 sudo make install
 sudo ldconfig
+```
 
-## ROS Wrapper
+## 2) Add ROS Wrapper (realsense-ros)
 
+Clone the wrapper into this workspace and pin to the version used here:
+
+```bash
 cd ~/GitHubRepos/AIS4104_pick_and_place/src
 git clone https://github.com/IntelRealSense/realsense-ros.git
 cd realsense-ros
 git checkout 4.0.4
+```
 
-## Build Workspace
+## 3) Build Workspace
 
+```bash
 cd ~/GitHubRepos/AIS4104_pick_and_place
 colcon build --symlink-install --packages-up-to realsense2_camera
 colcon build --symlink-install
+```
 
-## Run
+## 4) Configure Stable USB Camera Alias (`/dev/usb_camera`)
 
+Run once per machine so `video_device:=/dev/usb_camera` is stable.
+Note: this rule matches the camera used in this project (`idVendor=0bda`, `idProduct=5805`). If another camera is used, replace those values with the device IDs:
+
+```bash
+lsusb
+```
+
+Then create the udev rule:
+
+```bash
+sudo tee /etc/udev/rules.d/99-usb-camera.rules >/dev/null <<'EOF2'
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="5805", ATTR{index}=="0", SYMLINK+="usb_camera"
+EOF2
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Then unplug/replug the USB camera and verify:
+
+```bash
+ls -l /dev/usb_camera
+```
+
+## 5) Source Environment
+
+Use this in each new terminal before running:
+
+```bash
 source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
-ros2 launch ./launch/pick_and_place.launch.py
+cd <your_workspace>
+source install/setup.bash
+```
 
-## Launch
+## 6) Default Launch
 
-source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
+```bash
 ros2 launch ./launch/pick_and_place.launch.py
+```
+
+## 7) Common Launch Modes
 
 ### YOLO/OpenCV on USB image, RealSense for depth/pointcloud (default behavior)
 
+```bash
 ros2 launch ./launch/pick_and_place.launch.py \
- use_realsense:=true \
- use_usb_cam:=true \
- image_topic:=/usb_cam/image_raw
+  use_realsense:=true \
+  use_usb_cam:=true \
+  image_topic:=/usb_cam/image_raw
+```
 
 ### RealSense only (YOLO/OpenCV use RealSense color image)
 
-source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
+```bash
 ros2 launch ./launch/pick_and_place.launch.py \
- use_realsense:=true \
- use_usb_cam:=false \
- image_topic:=/camera/color/image_raw
+  use_realsense:=true \
+  use_usb_cam:=false \
+  image_topic:=/camera/color/image_raw
+```
 
 ### USB camera only (no RealSense node)
 
-source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
+```bash
 ros2 launch ./launch/pick_and_place.launch.py \
- use_realsense:=false \
- use_usb_cam:=true \
- image_topic:=/usb_cam/image_raw
+  use_realsense:=false \
+  use_usb_cam:=true \
+  image_topic:=/usb_cam/image_raw
+```
 
 ### Pointcloud ON with true RGB texture (real color)
 
-source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
+```bash
 ros2 launch ./launch/pick_and_place.launch.py \
- use_realsense:=true \
- pointcloud_enable:=true \
- align_depth_enable:=true \
- pointcloud_stream_filter:=2 \
- pointcloud_stream_index_filter:=0
+  use_realsense:=true \
+  pointcloud_enable:=true \
+  align_depth_enable:=true \
+  pointcloud_stream_filter:=2 \
+  pointcloud_stream_index_filter:=0
+```
 
 ### Pointcloud ON with "Any" texture stream (more robust / fewer texture warnings)
 
-source /opt/ros/humble/setup.bash
-source ~/GitHubRepos/AIS4104_pick_and_place/install/setup.bash
+```bash
 ros2 launch ./launch/pick_and_place.launch.py \
- use_realsense:=true \
- pointcloud_enable:=true \
- align_depth_enable:=true \
- pointcloud_stream_filter:=0 \
- pointcloud_stream_index_filter:=0
+  use_realsense:=true \
+  pointcloud_enable:=true \
+  align_depth_enable:=true \
+  pointcloud_stream_filter:=0 \
+  pointcloud_stream_index_filter:=0
+```
