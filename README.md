@@ -19,7 +19,10 @@ cmake .. \
 make -j"$(nproc)"
 sudo make install
 sudo ldconfig
+sudo ../scripts/setup_udev_rules.sh
 ```
+
+Then unplug/replug the RealSense camera.
 
 ## 2) Add ROS Wrapper (realsense-ros)
 
@@ -32,7 +35,21 @@ cd realsense-ros
 git checkout 4.0.4
 ```
 
-## 3) Build Workspace
+## 3) Install Workspace Dependencies
+
+Install required tools/packages and resolve ROS dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y python3-colcon-common-extensions python3-rosdep python3-pip ros-humble-usb-cam
+sudo rosdep init   # run once per machine (ignore if already initialized)
+rosdep update
+cd ~/GitHubRepos/AIS4104_pick_and_place
+rosdep install --from-paths src --ignore-src -r -y
+pip install ultralytics opencv-python
+```
+
+## 4) Build Workspace
 
 ```bash
 cd ~/GitHubRepos/AIS4104_pick_and_place
@@ -40,7 +57,7 @@ colcon build --symlink-install --packages-up-to realsense2_camera
 colcon build --symlink-install
 ```
 
-## 4) Configure Stable USB Camera Alias (`/dev/usb_camera`)
+## 5) Configure Stable USB Camera Alias (`/dev/usb_camera`)
 
 Run once per machine so `video_device:=/dev/usb_camera` is stable.
 Note: this rule matches the camera used in this project (`idVendor=0bda`, `idProduct=5805`). If another camera is used, replace those values with the device IDs:
@@ -66,7 +83,7 @@ Then unplug/replug the USB camera and verify:
 ls -l /dev/usb_camera
 ```
 
-## 5) Source Environment
+## 6) Source Environment
 
 Use this in each new terminal before running:
 
@@ -76,13 +93,13 @@ cd <your_workspace>
 source install/setup.bash
 ```
 
-## 6) Default Launch
+## 7) Default Launch
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py
 ```
 
-## 7) Common Launch Modes
+## 8) Common Launch Modes
 
 ### YOLO/OpenCV on USB image, RealSense for depth/pointcloud (default behavior)
 
