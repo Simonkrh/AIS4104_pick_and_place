@@ -9,13 +9,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     use_realsense = LaunchConfiguration("use_realsense")
-    use_sony_cam = LaunchConfiguration("use_sony_cam")
-
-    video_device = LaunchConfiguration("video_device")
-    pixel_format = LaunchConfiguration("pixel_format")
-    image_width = LaunchConfiguration("image_width")
-    image_height = LaunchConfiguration("image_height")
-    framerate = LaunchConfiguration("framerate")
 
     image_topic = LaunchConfiguration("image_topic")
     conf = LaunchConfiguration("conf")
@@ -46,25 +39,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    sony_cam = Node(
-        package="usb_cam",
-        executable="usb_cam_node_exe",
-        name="sony_cam",
-        output="screen",
-        condition=IfCondition(use_sony_cam),
-        parameters=[
-            {"video_device": video_device},
-            {"pixel_format": pixel_format},
-            {"image_width": image_width},
-            {"image_height": image_height},
-            {"framerate": framerate},
-        ],
-        remappings=[
-            ("image_raw", "/sony_cam/image_raw"),
-            ("camera_info", "/sony_cam/camera_info"),
-        ],
-    )
-
     yolo = Node(
         package="yolo_detector",
         executable="yolo_node",
@@ -88,13 +62,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_realsense", default_value="true"),
-            DeclareLaunchArgument("use_sony_cam", default_value="true"),
-            DeclareLaunchArgument("video_device", default_value="/dev/sony_camera"),
-            DeclareLaunchArgument("pixel_format", default_value="mjpeg2rgb"),
-            DeclareLaunchArgument("image_width", default_value="1920"),
-            DeclareLaunchArgument("image_height", default_value="1080"),
-            DeclareLaunchArgument("framerate", default_value="30.0"),
-            DeclareLaunchArgument("image_topic", default_value="/sony_cam/image_raw"),
+            DeclareLaunchArgument(
+                "image_topic", default_value="/realsense_cam/color/image_raw"
+            ),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),
             DeclareLaunchArgument("depth_profile", default_value="640x480x30"),
@@ -104,7 +74,6 @@ def generate_launch_description():
             DeclareLaunchArgument("conf", default_value="0.4"),
             DeclareLaunchArgument("device", default_value="cpu"),
             realsense_launch,
-            sony_cam,
             yolo,
             opencv,
         ]
