@@ -1,5 +1,11 @@
 # AIS4104 Pick and Place
 
+Set your workspace path once:
+
+```bash
+export WORKSPACE=~/path/to/AIS4104_pick_and_place
+```
+
 ## 1) Install RealSense Driver (librealsense)
 
 Build and install `librealsense` from source (version `v2.50.0`):
@@ -29,7 +35,7 @@ Then unplug/replug the RealSense camera.
 Clone the wrapper into this workspace and pin to the version used here:
 
 ```bash
-cd ~/GitHubRepos/AIS4104_pick_and_place/src
+cd "$WORKSPACE/src"
 git clone https://github.com/IntelRealSense/realsense-ros.git
 cd realsense-ros
 git checkout 4.0.4
@@ -44,7 +50,7 @@ sudo apt update
 sudo apt install -y python3-colcon-common-extensions python3-rosdep python3-pip
 sudo rosdep init   # run once per machine (ignore if already initialized)
 rosdep update
-cd ~/GitHubRepos/AIS4104_pick_and_place
+cd "$WORKSPACE"
 rosdep install --from-paths src --ignore-src -r -y
 pip install ultralytics opencv-python
 ```
@@ -52,7 +58,7 @@ pip install ultralytics opencv-python
 ## 4) Build Workspace
 
 ```bash
-cd ~/GitHubRepos/AIS4104_pick_and_place
+cd "$WORKSPACE"
 colcon build --symlink-install --packages-up-to realsense2_camera
 colcon build --symlink-install
 ```
@@ -63,7 +69,7 @@ Use this in each new terminal before running:
 
 ```bash
 source /opt/ros/humble/setup.bash
-cd <your_workspace>
+cd "$WORKSPACE"
 source install/setup.bash
 ```
 
