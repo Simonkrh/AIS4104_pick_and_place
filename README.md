@@ -75,19 +75,10 @@ ros2 launch ./launch/pick_and_place.launch.py
 
 ## 7) Common Launch Modes
 
-### RealSense only (YOLO/OpenCV use RealSense color image)
-
-```bash
-ros2 launch ./launch/pick_and_place.launch.py \
-  use_realsense:=true \
-  image_topic:=/realsense_cam/color/image_raw
-```
-
 ### Pointcloud ON with true RGB texture (real color)
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
-  use_realsense:=true \
   pointcloud_enable:=true \
   align_depth_enable:=true \
   pointcloud_stream_filter:=2 \
@@ -98,7 +89,6 @@ ros2 launch ./launch/pick_and_place.launch.py \
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
-  use_realsense:=true \
   pointcloud_enable:=true \
   align_depth_enable:=true \
   pointcloud_stream_filter:=0 \
