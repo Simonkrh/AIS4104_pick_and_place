@@ -51,7 +51,7 @@ sudo apt install -y python3-colcon-common-extensions python3-rosdep python3-pip
 sudo rosdep init   # run once per machine (ignore if already initialized)
 rosdep update
 cd "$WORKSPACE"
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -r -y --skip-keys=librealsense2
 pip install ultralytics opencv-python
 ```
 
