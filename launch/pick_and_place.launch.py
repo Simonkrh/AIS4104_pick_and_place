@@ -11,6 +11,7 @@ def generate_launch_description():
     use_realsense = LaunchConfiguration("use_realsense")
 
     image_topic = LaunchConfiguration("image_topic")
+    model = LaunchConfiguration("model")
     conf = LaunchConfiguration("conf")
     device = LaunchConfiguration("device")
     align_depth_enable = LaunchConfiguration("align_depth_enable")
@@ -46,6 +47,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"image_topic": image_topic},
+            {"model": model},
             {"conf": conf},
             {"device": device},
         ],
@@ -64,6 +66,9 @@ def generate_launch_description():
             DeclareLaunchArgument("use_realsense", default_value="true"),
             DeclareLaunchArgument(
                 "image_topic", default_value="/realsense_cam/color/image_raw"
+            ),
+            DeclareLaunchArgument(
+                "model", default_value="runs/detect/train/weights/best.pt"
             ),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),

@@ -1,0 +1,7 @@
+path: /home/simon/GitHubRepos/AIS4104_pick_and_place/dataset/boxes_v1
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: rectangle_box
+  1: square_box
