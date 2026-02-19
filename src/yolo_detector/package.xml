@@ -4,7 +4,7 @@
   <name>yolo_detector</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="simonkrh@gmail.com">simon</maintainer>
+  <maintainer email="maintainer@example.com">maintainer</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

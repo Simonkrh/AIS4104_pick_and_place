@@ -11,8 +11,12 @@ def generate_launch_description():
     use_realsense = LaunchConfiguration("use_realsense")
 
     image_topic = LaunchConfiguration("image_topic")
+    detection_topic = LaunchConfiguration("detection_topic")
+    depth_topic = LaunchConfiguration("depth_topic")
+    camera_info_topic = LaunchConfiguration("camera_info_topic")
     conf = LaunchConfiguration("conf")
     device = LaunchConfiguration("device")
+    use_depth_localizer = LaunchConfiguration("use_depth_localizer")
     align_depth_enable = LaunchConfiguration("align_depth_enable")
     pointcloud_enable = LaunchConfiguration("pointcloud_enable")
     depth_profile = LaunchConfiguration("depth_profile")
@@ -59,11 +63,33 @@ def generate_launch_description():
         parameters=[{"image_topic": image_topic}],
     )
 
+    depth_localizer = Node(
+        package="depth_localizer",
+        executable="detection_3d_node",
+        name="detection_3d_node",
+        output="screen",
+        condition=IfCondition(use_depth_localizer),
+        parameters=[
+            {"detection_topic": detection_topic},
+            {"depth_topic": depth_topic},
+            {"camera_info_topic": camera_info_topic},
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_realsense", default_value="true"),
+            DeclareLaunchArgument("use_depth_localizer", default_value="true"),
             DeclareLaunchArgument(
                 "image_topic", default_value="/realsense_cam/color/image_raw"
+            ),
+            DeclareLaunchArgument("detection_topic", default_value="/yolo/detections"),
+            DeclareLaunchArgument(
+                "depth_topic",
+                default_value="/realsense_cam/aligned_depth_to_color/image_raw",
+            ),
+            DeclareLaunchArgument(
+                "camera_info_topic", default_value="/realsense_cam/color/camera_info"
             ),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),
@@ -76,5 +102,6 @@ def generate_launch_description():
             realsense_launch,
             yolo,
             opencv,
+            depth_localizer,
         ]
     )
