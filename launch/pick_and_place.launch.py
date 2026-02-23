@@ -14,6 +14,7 @@ def generate_launch_description():
     detection_topic = LaunchConfiguration("detection_topic")
     depth_topic = LaunchConfiguration("depth_topic")
     camera_info_topic = LaunchConfiguration("camera_info_topic")
+    model = LaunchConfiguration("model")
     conf = LaunchConfiguration("conf")
     device = LaunchConfiguration("device")
     use_depth_localizer = LaunchConfiguration("use_depth_localizer")
@@ -50,6 +51,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"image_topic": image_topic},
+            {"model": model},
             {"conf": conf},
             {"device": device},
         ],
@@ -91,6 +93,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "camera_info_topic", default_value="/realsense_cam/color/camera_info"
             ),
+            DeclareLaunchArgument("model", default_value="models/pick_place_best.pt"),
             DeclareLaunchArgument("align_depth_enable", default_value="true"),
             DeclareLaunchArgument("pointcloud_enable", default_value="true"),
             DeclareLaunchArgument("depth_profile", default_value="640x480x30"),

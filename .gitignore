@@ -245,14 +245,10 @@ marimo/_lsp/
 __marimo__/
 src/realsense-ros/
 
-# Dataset policy: keep annotations, ignore raw images
-dataset/**/images/**/*.jpg
-dataset/**/images/**/*.jpeg
-dataset/**/images/**/*.png
-dataset/**/images/**/*.bmp
-dataset/**/images/**/*.webp
-dataset/**/images/**/*.tif
-dataset/**/images/**/*.tiff
+
+# Local training
+runs/
+dataset/
 
 # Keep empty folder placeholders
 !dataset/**/.gitkeep

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from pathlib import Path
 
 import cv2
 from ultralytics import YOLO
@@ -16,14 +17,20 @@ class YoloNode(Node):
         super().__init__('yolo_node')
 
         self.declare_parameter('image_topic', '/image_raw')
-        self.declare_parameter('model', 'yolov8n.pt')
+        self.declare_parameter('model', 'models/pick_place_best.pt')
         self.declare_parameter('conf', 0.65)
         self.declare_parameter('device', 'cpu')
 
         image_topic = self.get_parameter('image_topic').value
-        model_path = self.get_parameter('model').value
+        model_path = str(self.get_parameter('model').value)
         self.conf = float(self.get_parameter('conf').value)
         self.device = str(self.get_parameter('device').value)
+
+        if not Path(model_path).exists():
+            self.get_logger().warn(
+                f"Model not found at '{model_path}'. Falling back to 'yolov8n.pt'."
+            )
+            model_path = 'yolov8n.pt'
 
         self.bridge = CvBridge()
         self.model = YOLO(model_path)
@@ -110,4 +117,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
