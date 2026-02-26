@@ -81,12 +81,11 @@ ros2 launch ./launch/pick_and_place.launch.py
 
 ## 7) Common Launch Modes
 
-### Use specific model and CUDA GPU
+### Use specific model
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \
-  model:=models/pick_place_best.pt \
-  device:=0
+  model:=models/pick_place_best.pt
 ```
 
 ### Pointcloud ON with true RGB texture (real color)
@@ -99,7 +98,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
   pointcloud_stream_index_filter:=0
 ```
 
-### Pointcloud ON with "Any" texture stream (more robust / fewer texture warnings)
+### Pointcloud ON with "Any" texture stream
 
 ```bash
 ros2 launch ./launch/pick_and_place.launch.py \

@@ -22,6 +22,9 @@ class Detection3DNode(Node):
         self.declare_parameter("roi_half_size", 2)  # 2 => 5x5 patch
         self.declare_parameter("min_depth_m", 0.10)
         self.declare_parameter("max_depth_m", 2.00)
+        self.declare_parameter("enable_temporal_filter", True)
+        self.declare_parameter("smoothing_alpha", 0.4)
+        self.declare_parameter("max_jump_m", 0.08)
         self.declare_parameter("sync_queue_size", 10)
         self.declare_parameter("sync_slop", 0.10)
 
@@ -34,6 +37,11 @@ class Detection3DNode(Node):
         self.roi_half_size = int(self.get_parameter("roi_half_size").value)
         self.min_depth_m = float(self.get_parameter("min_depth_m").value)
         self.max_depth_m = float(self.get_parameter("max_depth_m").value)
+        self.enable_temporal_filter = bool(
+            self.get_parameter("enable_temporal_filter").value
+        )
+        self.smoothing_alpha = float(self.get_parameter("smoothing_alpha").value)
+        self.max_jump_m = float(self.get_parameter("max_jump_m").value)
 
         sync_queue_size = int(self.get_parameter("sync_queue_size").value)
         sync_slop = float(self.get_parameter("sync_slop").value)
@@ -46,6 +54,7 @@ class Detection3DNode(Node):
         self.cx = None
         self.cy = None
         self.camera_frame_id = ""
+        self.track_state = {}
 
         self.create_subscription(CameraInfo, camera_info_topic, self.on_camera_info, 10)
 
@@ -105,6 +114,12 @@ class Detection3DNode(Node):
 
             x = (u - self.cx) * z / self.fx
             y = (v - self.cy) * z / self.fy
+            label = (
+                det.results[0].hypothesis.class_id
+                if det.results
+                else f"unknown_{converted}"
+            )
+            x, y, z = self.apply_temporal_filter(label, x, y, z)
 
             det3d = Detection3D()
             det3d.header = out.header
@@ -132,6 +147,30 @@ class Detection3DNode(Node):
         self.pub.publish(out)
         if converted > 0:
             self.get_logger().debug(f"Published {converted} detections with 3D points")
+
+    def apply_temporal_filter(
+        self, label: str, x: float, y: float, z: float
+    ) -> tuple[float, float, float]:
+        if not self.enable_temporal_filter:
+            return x, y, z
+
+        prev = self.track_state.get(label)
+        if prev is None:
+            self.track_state[label] = (x, y, z)
+            return x, y, z
+
+        dx = x - prev[0]
+        dy = y - prev[1]
+        dz = z - prev[2]
+        if np.sqrt(dx * dx + dy * dy + dz * dz) > self.max_jump_m:
+            return prev
+
+        alpha = min(max(self.smoothing_alpha, 0.0), 1.0)
+        xf = alpha * x + (1.0 - alpha) * prev[0]
+        yf = alpha * y + (1.0 - alpha) * prev[1]
+        zf = alpha * z + (1.0 - alpha) * prev[2]
+        self.track_state[label] = (xf, yf, zf)
+        return xf, yf, zf
 
     def depth_patch_to_meters(self, patch: np.ndarray, encoding: str) -> np.ndarray:
         if patch.size == 0:
