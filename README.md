@@ -2,13 +2,81 @@
 
 This workspace is set up to consume a RealSense feed published from another machine by default.
 
-Set your workspace path once:
+## Prerequisites
+
+- Ubuntu 24.04 LTS
+- ROS 2 Jazzy installed on this machine
+- A remote machine publishing the RealSense topics into the same ROS 2 network
+- Matching `ROS_DOMAIN_ID` on both machines
+- `ROS_LOCALHOST_ONLY=0` or unset on both machines
+
+The project has been tested with ROS 2 Jazzy on Ubuntu 24.04. A good starting point is the official ROS 2 Jazzy Ubuntu install guide:
+
+https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html
+
+`ros-jazzy-ros-base` is sufficient for this project. You do not need the full desktop install unless you also want extra GUI tools.
+
+## Installation
+
+### 1) Install ROS 2 Jazzy
+
+Follow the official ROS 2 Jazzy install instructions for Ubuntu 24.04, then verify that this works:
 
 ```bash
-export WORKSPACE=~/path/to/AIS4104_pick_and_place
+source /opt/ros/jazzy/setup.bash
+ros2 --help
 ```
 
-## 1) Remote Camera Requirements
+### 2) Clone the workspace
+
+Choose a workspace location and clone this repository:
+
+```bash
+mkdir -p ~/ais4104_ws/src
+cd ~/ais4104_ws/src
+git clone https://github.com/Simonkrh/AIS4104_pick_and_place.git AIS4104_pick_and_place
+```
+
+Set your workspace path:
+
+```bash
+export WORKSPACE=~/ais4104_ws
+```
+
+### 3) Install workspace tools and dependencies
+
+```bash
+sudo apt update
+sudo apt install -y python3-colcon-common-extensions python3-rosdep python3-pip
+sudo rosdep init   # run once per machine (ignore if already initialized)
+rosdep update
+source /opt/ros/jazzy/setup.bash
+cd "$WORKSPACE"
+rosdep install --from-paths src --ignore-src -r -y
+pip install ultralytics opencv-python
+```
+
+You do not need `librealsense`, `realsense-ros`, or `realsense2_camera` on this machine unless you want to plug the camera in locally.
+
+### 4) Build the workspace
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd "$WORKSPACE"
+colcon build --symlink-install
+```
+
+### 5) Source the environment
+
+Use this in each new terminal before running:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd "$WORKSPACE"
+source install/setup.bash
+```
+
+## Remote Camera Requirements
 
 On the camera machine, publish these topics into the same ROS 2 graph:
 
@@ -20,40 +88,7 @@ Make sure both machines share the same `ROS_DOMAIN_ID`, and that `ROS_LOCALHOST_
 
 If you only publish RGB and not depth, launch this project with `use_depth_localizer:=false`.
 
-## 2) Install Workspace Dependencies
-
-Install required tools/packages and resolve ROS dependencies:
-
-```bash
-sudo apt update
-sudo apt install -y python3-colcon-common-extensions python3-rosdep python3-pip
-sudo rosdep init   # run once per machine (ignore if already initialized)
-rosdep update
-cd "$WORKSPACE"
-rosdep install --from-paths src --ignore-src -r -y
-pip install ultralytics opencv-python
-```
-
-You do not need `librealsense`, `realsense-ros`, or `realsense2_camera` on this machine unless you want to plug the camera in locally.
-
-## 3) Build Workspace
-
-```bash
-cd "$WORKSPACE"
-colcon build --symlink-install
-```
-
-## 4) Source Environment
-
-Use this in each new terminal before running:
-
-```bash
-source /opt/ros/jazzy/setup.bash
-cd "$WORKSPACE"
-source install/setup.bash
-```
-
-## 5) Default Launch
+## Default Launch
 
 The default launch now assumes the camera is remote:
 
@@ -61,7 +96,7 @@ The default launch now assumes the camera is remote:
 ros2 launch ./launch/pick_and_place.launch.py
 ```
 
-## 6) Common Launch Modes
+## Common Launch Modes
 
 ### Use a specific model
 
@@ -86,7 +121,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
   use_depth_localizer:=false
 ```
 
-## 7) Optional Local RealSense Setup
+## Optional Local RealSense Setup
 
 Only do this if you want the RealSense physically attached to this machine.
 
