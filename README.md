@@ -53,7 +53,7 @@ rosdep update
 source /opt/ros/jazzy/setup.bash
 cd "$WORKSPACE"
 rosdep install --from-paths src --ignore-src -r -y
-pip install ultralytics opencv-python
+python3 -m pip install --user --break-system-packages -r src/AIS4104_pick_and_place/requirements.txt
 ```
 
 You do not need `librealsense`, `realsense-ros`, or `realsense2_camera` on this machine unless you want to plug the camera in locally.
