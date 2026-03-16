@@ -1,5 +1,9 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -7,9 +11,35 @@ from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
-def generate_launch_description():
-    use_realsense = LaunchConfiguration("use_realsense")
+def _maybe_launch_realsense(context):
+    use_realsense = LaunchConfiguration("use_realsense").perform(context).lower()
+    if use_realsense not in ("1", "true", "yes", "on"):
+        return []
 
+    return [
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                [FindPackageShare("realsense2_camera"), "/launch/rs_launch.py"]
+            ),
+            launch_arguments={
+                "camera_namespace": "",
+                "camera_name": "realsense_cam",
+                "align_depth.enable": LaunchConfiguration("align_depth_enable"),
+                "pointcloud.enable": LaunchConfiguration("pointcloud_enable"),
+                "depth_module.profile": LaunchConfiguration("depth_profile"),
+                "rgb_camera.profile": LaunchConfiguration("rgb_profile"),
+                "pointcloud.stream_filter": LaunchConfiguration(
+                    "pointcloud_stream_filter"
+                ),
+                "pointcloud.stream_index_filter": LaunchConfiguration(
+                    "pointcloud_stream_index_filter"
+                ),
+            }.items(),
+        )
+    ]
+
+
+def generate_launch_description():
     image_topic = LaunchConfiguration("image_topic")
     detection_topic = LaunchConfiguration("detection_topic")
     depth_topic = LaunchConfiguration("depth_topic")
@@ -18,31 +48,6 @@ def generate_launch_description():
     conf = LaunchConfiguration("conf")
     device = LaunchConfiguration("device")
     use_depth_localizer = LaunchConfiguration("use_depth_localizer")
-    align_depth_enable = LaunchConfiguration("align_depth_enable")
-    pointcloud_enable = LaunchConfiguration("pointcloud_enable")
-    depth_profile = LaunchConfiguration("depth_profile")
-    rgb_profile = LaunchConfiguration("rgb_profile")
-    pointcloud_stream_filter = LaunchConfiguration("pointcloud_stream_filter")
-    pointcloud_stream_index_filter = LaunchConfiguration(
-        "pointcloud_stream_index_filter"
-    )
-
-    realsense_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            [FindPackageShare("realsense2_camera"), "/launch/rs_launch.py"]
-        ),
-        condition=IfCondition(use_realsense),
-        launch_arguments={
-            "camera_namespace": "",
-            "camera_name": "realsense_cam",
-            "align_depth.enable": align_depth_enable,
-            "pointcloud.enable": pointcloud_enable,
-            "depth_module.profile": depth_profile,
-            "rgb_camera.profile": rgb_profile,
-            "pointcloud.stream_filter": pointcloud_stream_filter,
-            "pointcloud.stream_index_filter": pointcloud_stream_index_filter,
-        }.items(),
-    )
 
     yolo = Node(
         package="yolo_detector",
@@ -80,7 +85,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("use_realsense", default_value="true"),
+            DeclareLaunchArgument("use_realsense", default_value="false"),
             DeclareLaunchArgument("use_depth_localizer", default_value="true"),
             DeclareLaunchArgument(
                 "image_topic", default_value="/realsense_cam/color/image_raw"
@@ -102,7 +107,7 @@ def generate_launch_description():
             DeclareLaunchArgument("pointcloud_stream_index_filter", default_value="0"),
             DeclareLaunchArgument("conf", default_value="0.4"),
             DeclareLaunchArgument("device", default_value="cpu"),
-            realsense_launch,
+            OpaqueFunction(function=_maybe_launch_realsense),
             yolo,
             opencv,
             depth_localizer,
