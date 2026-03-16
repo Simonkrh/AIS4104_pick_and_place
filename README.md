@@ -48,7 +48,7 @@ colcon build --symlink-install
 Use this in each new terminal before running:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd "$WORKSPACE"
 source install/setup.bash
 ```
