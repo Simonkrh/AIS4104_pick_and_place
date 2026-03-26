@@ -218,6 +218,9 @@ __pycache__/
 .vscode/
 .idea/
 
+# Calibration outputs
+calibration/
+
 # OS
 .DS_Store
 Thumbs.db
