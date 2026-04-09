@@ -36,6 +36,7 @@ class CollectorConfig:
     board_rows: int
     square_size_m: float
     session_dir: Path
+    preview_scale: float = 1.5
     preview_window: str = "Eye-In-Hand Calibration"
 
 
@@ -62,7 +63,9 @@ class SampleCollector(Node):
         self._load_existing_session()
 
         self.create_subscription(Image, config.image_topic, self.on_image, 10)
-        self.create_subscription(CameraInfo, config.camera_info_topic, self.on_camera_info, 10)
+        self.create_subscription(
+            CameraInfo, config.camera_info_topic, self.on_camera_info, 10
+        )
 
     def _load_existing_session(self):
         if not self.sample_file.exists():
@@ -132,7 +135,9 @@ class SampleCollector(Node):
                     30,
                     0.001,
                 )
-                corners = cv2.cornerSubPix(variant, corners, (11, 11), (-1, -1), criteria)
+                corners = cv2.cornerSubPix(
+                    variant, corners, (11, 11), (-1, -1), criteria
+                )
                 return True, corners, pattern_size
 
         return False, None, None
@@ -178,6 +183,16 @@ class SampleCollector(Node):
         )
         return overlay
 
+    def get_preview_image(self) -> np.ndarray:
+        if self.config.preview_scale <= 1.0:
+            return self.latest_overlay
+
+        width = max(1, int(self.latest_overlay.shape[1] * self.config.preview_scale))
+        height = max(1, int(self.latest_overlay.shape[0] * self.config.preview_scale))
+        return cv2.resize(
+            self.latest_overlay, (width, height), interpolation=cv2.INTER_LINEAR
+        )
+
     def lookup_base_t_tool(self, stamp) -> np.ndarray | None:
         for query_time in [Time.from_msg(stamp), Time()]:
             try:
@@ -203,7 +218,9 @@ class SampleCollector(Node):
             self.get_logger().warn("Checkerboard not found in the current image.")
             return
         if self.latest_pattern_size is None:
-            self.get_logger().warn("No checkerboard pattern size was stored for this image.")
+            self.get_logger().warn(
+                "No checkerboard pattern size was stored for this image."
+            )
             return
 
         object_points = build_object_points(
@@ -230,14 +247,21 @@ class SampleCollector(Node):
             )
             return
 
-        sample_index = len(self.samples)
+        sample_index = (
+            max((int(sample.get("index", -1)) for sample in self.samples), default=-1) + 1
+        )
         image_path = self.images_dir / f"sample_{sample_index:04d}.png"
+        overlay_image_path = self.images_dir / f"sample_{sample_index:04d}_overlay.png"
         cv2.imwrite(str(image_path), self.latest_bgr)
+        cv2.imwrite(str(overlay_image_path), self.latest_overlay)
 
         sample = {
             "index": sample_index,
             "captured_utc": datetime.now(timezone.utc).isoformat(),
             "image_path": str(image_path.relative_to(self.config.session_dir)),
+            "overlay_image_path": str(
+                overlay_image_path.relative_to(self.config.session_dir)
+            ),
             "image_stamp": {
                 "sec": int(self.latest_image_msg.header.stamp.sec),
                 "nanosec": int(self.latest_image_msg.header.stamp.nanosec),
@@ -245,8 +269,14 @@ class SampleCollector(Node):
             "base_T_tool": pose_dict_from_matrix(base_t_tool),
             "target_to_camera": {
                 "pattern_size": list(self.latest_pattern_size),
-                "rvec": np.asarray(rvec, dtype=np.float64).reshape(3).astype(float).tolist(),
-                "tvec_m": np.asarray(tvec, dtype=np.float64).reshape(3).astype(float).tolist(),
+                "rvec": np.asarray(rvec, dtype=np.float64)
+                .reshape(3)
+                .astype(float)
+                .tolist(),
+                "tvec_m": np.asarray(tvec, dtype=np.float64)
+                .reshape(3)
+                .astype(float)
+                .tolist(),
             },
         }
         self.samples.append(sample)
@@ -274,7 +304,9 @@ class SampleCollector(Node):
                         "camera_matrix": self.camera_matrix.astype(float).tolist()
                         if self.camera_matrix is not None
                         else None,
-                        "dist_coeffs": self.dist_coeffs.astype(float).reshape(-1).tolist()
+                        "dist_coeffs": self.dist_coeffs.astype(float)
+                        .reshape(-1)
+                        .tolist()
                         if self.dist_coeffs is not None
                         else None,
                     },
@@ -285,15 +317,25 @@ class SampleCollector(Node):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Collect eye-in-hand checkerboard samples.")
+    parser = argparse.ArgumentParser(
+        description="Collect eye-in-hand checkerboard samples."
+    )
     parser.add_argument("--image-topic", default="/realsense_cam/color/image_raw")
-    parser.add_argument("--camera-info-topic", default="/realsense_cam/color/camera_info")
+    parser.add_argument(
+        "--camera-info-topic", default="/realsense_cam/color/camera_info"
+    )
     parser.add_argument("--base-frame", default="base")
     parser.add_argument("--tool-frame", default="tool0")
-    parser.add_argument("--board-cols", type=int, default=9)
-    parser.add_argument("--board-rows", type=int, default=6)
+    parser.add_argument("--board-cols", type=int, default=6)
+    parser.add_argument("--board-rows", type=int, default=8)
     parser.add_argument("--square-size-m", type=float, default=0.024)
     parser.add_argument("--session-dir", default="calibration/eye_in_hand")
+    parser.add_argument(
+        "--preview-scale",
+        type=float,
+        default=1.5,
+        help="Scale factor for the preview window image, e.g. 2.0 makes it twice as large.",
+    )
     return parser.parse_args()
 
 
@@ -308,19 +350,25 @@ def main():
         board_rows=args.board_rows,
         square_size_m=args.square_size_m,
         session_dir=Path(args.session_dir),
+        preview_scale=max(0.1, args.preview_scale),
     )
 
     ensure_directory(config.session_dir)
     rclpy.init(args=None)
     node = SampleCollector(config)
     cv2.namedWindow(config.preview_window, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(
+        config.preview_window,
+        int(640 * config.preview_scale),
+        int(480 * config.preview_scale),
+    )
 
     try:
         print("Move the robot to a stable pose, then press 's' to save a sample.")
         print("Press 'q' to finish collecting.")
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.05)
-            cv2.imshow(config.preview_window, node.latest_overlay)
+            cv2.imshow(config.preview_window, node.get_preview_image())
             key = cv2.waitKey(1) & 0xFF
             if key == ord("s"):
                 node.save_current_sample()

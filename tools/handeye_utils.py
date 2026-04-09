@@ -99,8 +99,9 @@ def build_object_points(board_cols: int, board_rows: int, square_size_m: float) 
     return points
 
 
-def validate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
+def evaluate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
     base_t_targets = []
+    sample_refs = []
     for sample in samples:
         base_t_tool = matrix_from_pose_dict(sample["base_T_tool"])
         target_t_camera = rvec_tvec_to_matrix(
@@ -110,18 +111,71 @@ def validate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
         camera_t_target = invert_transform(target_t_camera)
         base_t_target = base_t_tool @ tool_t_camera @ camera_t_target
         base_t_targets.append(base_t_target)
+        sample_refs.append(
+            {
+                "index": int(sample.get("index", len(sample_refs))),
+                "captured_utc": sample.get("captured_utc"),
+                "image_path": sample.get("image_path"),
+                "overlay_image_path": sample.get("overlay_image_path"),
+            }
+        )
 
     translations = np.asarray([matrix[:3, 3] for matrix in base_t_targets], dtype=np.float64)
+    translation_mean = translations.mean(axis=0)
     translation_std = translations.std(axis=0)
 
     rotations = Rotation.from_matrix([matrix[:3, :3] for matrix in base_t_targets])
     mean_rotation = rotations.mean()
     angle_errors_deg = ((mean_rotation.inv() * rotations).magnitude() * 180.0 / math.pi)
+    translation_error_vectors = translations - translation_mean
+    translation_errors_m = np.linalg.norm(translation_error_vectors, axis=1)
+
+    position_std_norm_m = float(np.linalg.norm(translation_std))
+    orientation_std_deg = float(angle_errors_deg.std())
+    position_scale = max(position_std_norm_m, 1e-9)
+    orientation_scale = max(orientation_std_deg, 1e-9)
+
+    sample_errors = []
+    for sample_ref, translation_error_vector, translation_error_m, orientation_error_deg in zip(
+        sample_refs,
+        translation_error_vectors,
+        translation_errors_m,
+        angle_errors_deg,
+    ):
+        ranking_score = math.hypot(
+            float(translation_error_m) / position_scale,
+            float(orientation_error_deg) / orientation_scale,
+        )
+        sample_errors.append(
+            {
+                **sample_ref,
+                "translation_error_xyz_m": translation_error_vector.astype(float).tolist(),
+                "translation_error_m": float(translation_error_m),
+                "orientation_error_deg": float(orientation_error_deg),
+                "ranking_score": float(ranking_score),
+            }
+        )
+
+    sample_errors.sort(
+        key=lambda item: (
+            item["ranking_score"],
+            item["orientation_error_deg"],
+            item["translation_error_m"],
+        ),
+        reverse=True,
+    )
 
     return {
         "sample_count": len(samples),
         "target_position_std_m": translation_std.astype(float).tolist(),
-        "target_position_std_norm_m": float(np.linalg.norm(translation_std)),
-        "target_orientation_std_deg": float(angle_errors_deg.std()),
+        "target_position_std_norm_m": position_std_norm_m,
+        "target_orientation_std_deg": orientation_std_deg,
         "target_orientation_max_error_deg": float(angle_errors_deg.max()),
+        "sample_errors": sample_errors,
     }
+
+
+def validate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
+    evaluation = evaluate_solution(samples, tool_t_camera)
+    evaluation.pop("sample_errors", None)
+    return evaluation
