@@ -35,7 +35,6 @@ def _rotate_vector_by_quaternion_xyzw(
     vy: float,
     vz: float,
 ) -> tuple[float, float, float]:
-    # v' = v + 2*q_vec x (q_vec x v + qw*v)
     tx = 2.0 * (qy * vz - qz * vy)
     ty = 2.0 * (qz * vx - qx * vz)
     tz = 2.0 * (qx * vy - qy * vx)
@@ -67,6 +66,7 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("tf_timeout_sec", 0.05)
         self.declare_parameter("allow_latest_tf_fallback", True)
+        self.declare_parameter("max_input_stamp_age_sec", 2.0)
 
         self.declare_parameter("target_class", "")
         self.declare_parameter("min_score", 0.0)
@@ -79,6 +79,9 @@ class Detection3DTransformNode(Node):
         self.tf_timeout_sec = float(self.get_parameter("tf_timeout_sec").value)
         self.allow_latest_tf_fallback = parse_bool(
             self.get_parameter("allow_latest_tf_fallback").value
+        )
+        self.max_input_stamp_age_sec = float(
+            self.get_parameter("max_input_stamp_age_sec").value
         )
 
         self.target_class = str(self.get_parameter("target_class").value).strip()
@@ -106,23 +109,54 @@ class Detection3DTransformNode(Node):
         )
 
         self._last_tf_warn_ns = 0
+        self._last_stamp_warn_ns = 0
 
         self.get_logger().info(f"Subscribing detections: {self.input_topic}")
-        self.get_logger().info(f"Publishing transformed detections: {self.output_topic}")
+        self.get_logger().info(
+            f"Publishing transformed detections: {self.output_topic}"
+        )
         self.get_logger().info(f"Target frame: {self.target_frame}")
         if self.best_pose_pub is not None:
             self.get_logger().info(f"Publishing best pose: {self.best_pose_topic}")
         if self.tf_broadcaster is not None:
             self.get_logger().info(
-                f"Broadcasting TF for best detection: {self.target_frame} -> {self.best_tf_child_frame}"
+                f"Broadcasting TF for best detection: "
+                f"{self.target_frame} -> {self.best_tf_child_frame}"
             )
 
-    def _lookup_target_t_source(self, source_frame: str, stamp) -> Optional[TransformStamped]:
+    def _is_stamp_stale(self, stamp) -> bool:
+        stamp_ns = _stamp_to_nanoseconds(stamp)
+        if stamp_ns <= 0:
+            return True
+        now_ns = self.get_clock().now().nanoseconds
+        max_age_ns = int(self.max_input_stamp_age_sec * 1e9)
+        return abs(now_ns - stamp_ns) > max_age_ns
+
+    def _warn_stale_stamp_once(self, stamp) -> None:
+        now_ns = self.get_clock().now().nanoseconds
+        if now_ns - self._last_stamp_warn_ns > 1_000_000_000:
+            self._last_stamp_warn_ns = now_ns
+            age_sec = (now_ns - _stamp_to_nanoseconds(stamp)) / 1e9
+            self.get_logger().warn(
+                f"Incoming detection timestamp is stale by {age_sec:.3f}s; "
+                "using latest TF and current node time for outputs."
+            )
+
+    def _lookup_target_t_source(
+        self,
+        source_frame: str,
+        stamp,
+        force_latest: bool = False,
+    ) -> Optional[TransformStamped]:
         exact_lookup_error = ""
         timeout = Duration(seconds=max(self.tf_timeout_sec, 0.0))
-        query_times = [Time.from_msg(stamp)]
-        if self.allow_latest_tf_fallback:
-            query_times.append(Time())
+
+        if force_latest:
+            query_times = [Time()]
+        else:
+            query_times = [Time.from_msg(stamp)]
+            if self.allow_latest_tf_fallback:
+                query_times.append(Time())
 
         for query_time in query_times:
             try:
@@ -137,8 +171,8 @@ class Detection3DTransformNode(Node):
                     if now_ns - self._last_tf_warn_ns > 1_000_000_000:
                         self._last_tf_warn_ns = now_ns
                         self.get_logger().warn(
-                            "TF lookup fell back to latest transform instead of message timestamp. "
-                            f"Exact lookup error: {exact_lookup_error}"
+                            "TF lookup fell back to latest transform instead of "
+                            f"message timestamp. Exact lookup error: {exact_lookup_error}"
                         )
                 return transform
             except TransformException as exc:
@@ -157,7 +191,9 @@ class Detection3DTransformNode(Node):
         return None
 
     @staticmethod
-    def _transform_point(transform: TransformStamped, x: float, y: float, z: float) -> tuple[float, float, float]:
+    def _transform_point(
+        transform: TransformStamped, x: float, y: float, z: float
+    ) -> tuple[float, float, float]:
         q = transform.transform.rotation
         t = transform.transform.translation
         qx, qy, qz, qw = _normalize_quaternion_xyzw(
@@ -169,17 +205,31 @@ class Detection3DTransformNode(Node):
     def on_detections(self, msg: Detection3DArray):
         source_frame = str(msg.header.frame_id)
         if not source_frame:
-            self.get_logger().warn("Received Detection3DArray with empty header.frame_id")
+            self.get_logger().warn(
+                "Received Detection3DArray with empty header.frame_id"
+            )
             return
+
+        input_stamp_stale = self._is_stamp_stale(msg.header.stamp)
+        if input_stamp_stale:
+            self._warn_stale_stamp_once(msg.header.stamp)
+
+        publish_stamp = (
+            self.get_clock().now().to_msg() if input_stamp_stale else msg.header.stamp
+        )
 
         transform = None
         if source_frame != self.target_frame:
-            transform = self._lookup_target_t_source(source_frame, msg.header.stamp)
+            transform = self._lookup_target_t_source(
+                source_frame,
+                msg.header.stamp,
+                force_latest=input_stamp_stale,
+            )
             if transform is None:
                 return
 
         out = Detection3DArray()
-        out.header.stamp = msg.header.stamp
+        out.header.stamp = publish_stamp
         out.header.frame_id = self.target_frame
 
         for det in msg.detections:
@@ -192,7 +242,7 @@ class Detection3DTransformNode(Node):
                 x, y, z = self._transform_point(transform, x, y, z)
 
             det_out = Detection3D()
-            det_out.header.stamp = msg.header.stamp
+            det_out.header.stamp = publish_stamp
             det_out.header.frame_id = self.target_frame
 
             det_out.bbox.center.position.x = x
@@ -222,7 +272,7 @@ class Detection3DTransformNode(Node):
 
         if self.best_pose_pub is not None:
             pose = PoseStamped()
-            pose.header.stamp = out.header.stamp
+            pose.header.stamp = publish_stamp
             pose.header.frame_id = out.header.frame_id
             pose.pose.position = best.bbox.center.position
             pose.pose.orientation.w = 1.0
@@ -230,7 +280,7 @@ class Detection3DTransformNode(Node):
 
         if self.tf_broadcaster is not None:
             tf_msg = TransformStamped()
-            tf_msg.header.stamp = out.header.stamp
+            tf_msg.header.stamp = publish_stamp
             tf_msg.header.frame_id = out.header.frame_id
             tf_msg.child_frame_id = self.best_tf_child_frame
             tf_msg.transform.translation.x = float(best.bbox.center.position.x)

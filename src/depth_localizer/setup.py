@@ -26,6 +26,8 @@ setup(
             "detection_3d_node = depth_localizer.detection_3d_node:main",
             "detection_3d_transform_node = depth_localizer.detection_3d_transform_node:main",
             "handeye_static_tf_publisher = depth_localizer.handeye_static_tf_publisher:main",
+            "pick_pose_generator_node = depth_localizer.pick_pose_generator_node:main",
+            "pick_moveit_executor_node = depth_localizer.pick_moveit_executor_node:main",
         ],
     },
 )

@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-import rclpy
-from rclpy.node import Node
+from __future__ import annotations
+
 from pathlib import Path
 
 import cv2
-from ultralytics import YOLO
-
+import rclpy
+from cv_bridge import CvBridge
+from rclpy.node import Node
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import Image as ImageMsg
+from ultralytics import YOLO
 from vision_msgs.msg import (
-    Detection2DArray,
-    Detection2D,
-    ObjectHypothesisWithPose,
     BoundingBox2D,
+    Detection2D,
+    Detection2DArray,
+    ObjectHypothesisWithPose,
 )
-from cv_bridge import CvBridge
+
+
+def _stamp_to_nanoseconds(stamp) -> int:
+    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
 
 class YoloNode(Node):
@@ -25,11 +30,15 @@ class YoloNode(Node):
         self.declare_parameter("model", "models/pick_place_best.pt")
         self.declare_parameter("conf", 0.65)
         self.declare_parameter("device", "cpu")
+        self.declare_parameter("max_input_stamp_age_sec", 2.0)
 
-        image_topic = self.get_parameter("image_topic").value
+        image_topic = str(self.get_parameter("image_topic").value)
         model_path = str(self.get_parameter("model").value)
         self.conf = float(self.get_parameter("conf").value)
         self.device = str(self.get_parameter("device").value)
+        self.max_input_stamp_age_sec = float(
+            self.get_parameter("max_input_stamp_age_sec").value
+        )
 
         if not Path(model_path).exists():
             self.get_logger().warn(
@@ -39,13 +48,13 @@ class YoloNode(Node):
 
         self.bridge = CvBridge()
         self.model = YOLO(model_path)
-
-        # Load class names from the YOLO model
         self.names = self.model.names
 
         self.sub = self.create_subscription(Image, image_topic, self.cb, 10)
         self.pub = self.create_publisher(Detection2DArray, "/yolo/detections", 10)
         self.pub_img = self.create_publisher(ImageMsg, "/yolo/image_annotated", 10)
+
+        self._last_stamp_warn_ns = 0
 
         self.get_logger().info(
             f"YOLO model={model_path}, conf={self.conf}, device={self.device}"
@@ -54,15 +63,41 @@ class YoloNode(Node):
         self.get_logger().info("Publishing detections on: /yolo/detections")
         self.get_logger().info("Publishing annotated image on: /yolo/image_annotated")
 
+    def _is_stamp_stale(self, stamp) -> bool:
+        stamp_ns = _stamp_to_nanoseconds(stamp)
+        if stamp_ns <= 0:
+            return True
+        now_ns = self.get_clock().now().nanoseconds
+        max_age_ns = int(self.max_input_stamp_age_sec * 1e9)
+        return abs(now_ns - stamp_ns) > max_age_ns
+
+    def _warn_stale_stamp_once(self, stamp) -> None:
+        now_ns = self.get_clock().now().nanoseconds
+        if now_ns - self._last_stamp_warn_ns > 1_000_000_000:
+            self._last_stamp_warn_ns = now_ns
+            age_sec = (now_ns - _stamp_to_nanoseconds(stamp)) / 1e9
+            self.get_logger().warn(
+                f"Incoming image timestamp is stale by {age_sec:.3f}s; "
+                "publishing detections and annotated image with current node time."
+            )
+
     def cb(self, msg: Image):
+        if self._is_stamp_stale(msg.header.stamp):
+            self._warn_stale_stamp_once(msg.header.stamp)
+
+        output_stamp = self.get_clock().now().to_msg()
+        frame_id = str(msg.header.frame_id)
+
         cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         annotated = cv_img.copy()
 
         results = self.model.predict(
             cv_img, conf=self.conf, device=self.device, verbose=False
         )
+
         det_array = Detection2DArray()
-        det_array.header = msg.header
+        det_array.header.stamp = output_stamp
+        det_array.header.frame_id = frame_id
 
         r = results[0]
         if r.boxes is not None:
@@ -71,13 +106,10 @@ class YoloNode(Node):
                 cls_id = int(b.cls[0].item())
                 score = float(b.conf[0].item())
 
-                # Convert class ID to real name
                 name = self.names.get(cls_id, str(cls_id))
 
-                # Draw rectangle
                 x1i, y1i, x2i, y2i = map(int, [x1, y1, x2, y2])
                 cv2.rectangle(annotated, (x1i, y1i), (x2i, y2i), (0, 255, 0), 2)
-
                 cv2.putText(
                     annotated,
                     f"{name} {score:.2f}",
@@ -88,9 +120,9 @@ class YoloNode(Node):
                     2,
                 )
 
-                # Build ROS detection message
                 det = Detection2D()
-                det.header = msg.header
+                det.header.stamp = output_stamp
+                det.header.frame_id = frame_id
 
                 bbox = BoundingBox2D()
                 bbox.center.position.x = (x1 + x2) / 2.0
@@ -107,21 +139,24 @@ class YoloNode(Node):
 
                 det_array.detections.append(det)
 
-        # Publish annotated image
         img_msg = self.bridge.cv2_to_imgmsg(annotated, encoding="bgr8")
-        img_msg.header = msg.header
+        img_msg.header.stamp = output_stamp
+        img_msg.header.frame_id = frame_id
         self.pub_img.publish(img_msg)
 
-        # Publish detections
         self.pub.publish(det_array)
 
 
 def main():
     rclpy.init()
     node = YoloNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
