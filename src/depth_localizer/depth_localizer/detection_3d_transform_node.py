@@ -64,7 +64,7 @@ class Detection3DTransformNode(Node):
 
         self.declare_parameter("input_topic", "/yolo/detections_3d")
         self.declare_parameter("output_topic", "/yolo/detections_3d_base")
-        self.declare_parameter("target_frame", "base")
+        self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("tf_timeout_sec", 0.05)
         self.declare_parameter("allow_latest_tf_fallback", True)
 

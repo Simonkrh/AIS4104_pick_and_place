@@ -50,6 +50,8 @@ def generate_launch_description():
     device = LaunchConfiguration("device")
     use_depth_localizer = LaunchConfiguration("use_depth_localizer")
     detections_3d_topic = LaunchConfiguration("detections_3d_topic")
+    sync_queue_size = LaunchConfiguration("sync_queue_size")
+    sync_slop = LaunchConfiguration("sync_slop")
 
     yolo = Node(
         package="yolo_detector",
@@ -83,6 +85,8 @@ def generate_launch_description():
             {"depth_topic": depth_topic},
             {"camera_info_topic": camera_info_topic},
             {"output_topic": detections_3d_topic},
+            {"sync_queue_size": sync_queue_size},
+            {"sync_slop": sync_slop},
         ],
     )
 
@@ -135,6 +139,16 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("model", default_value="models/pick_place_best.pt"),
             DeclareLaunchArgument(
+                "sync_queue_size",
+                default_value="10",
+                description="ApproximateTimeSynchronizer queue size for detection_3d_node.",
+            ),
+            DeclareLaunchArgument(
+                "sync_slop",
+                default_value="0.10",
+                description="ApproximateTimeSynchronizer slop (sec) for detection_3d_node.",
+            ),
+            DeclareLaunchArgument(
                 "detections_3d_topic", default_value="/yolo/detections_3d"
             ),
             DeclareLaunchArgument(
@@ -164,7 +178,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "detections_3d_base_topic", default_value="/yolo/detections_3d_base"
             ),
-            DeclareLaunchArgument("detection_target_frame", default_value="base"),
+            DeclareLaunchArgument("detection_target_frame", default_value="base_link"),
             DeclareLaunchArgument("tf_timeout_sec", default_value="0.05"),
             DeclareLaunchArgument("allow_latest_tf_fallback", default_value="true"),
             DeclareLaunchArgument("target_class", default_value=""),
