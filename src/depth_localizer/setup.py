@@ -24,6 +24,8 @@ setup(
     entry_points={
         "console_scripts": [
             "detection_3d_node = depth_localizer.detection_3d_node:main",
+            "detection_3d_transform_node = depth_localizer.detection_3d_transform_node:main",
+            "handeye_static_tf_publisher = depth_localizer.handeye_static_tf_publisher:main",
         ],
     },
 )
