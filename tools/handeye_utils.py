@@ -104,12 +104,11 @@ def evaluate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
     sample_refs = []
     for sample in samples:
         base_t_tool = matrix_from_pose_dict(sample["base_T_tool"])
-        target_t_camera = rvec_tvec_to_matrix(
+        target_to_camera = rvec_tvec_to_matrix(
             sample["target_to_camera"]["rvec"],
             sample["target_to_camera"]["tvec_m"],
         )
-        camera_t_target = invert_transform(target_t_camera)
-        base_t_target = base_t_tool @ tool_t_camera @ camera_t_target
+        base_t_target = base_t_tool @ tool_t_camera @ target_to_camera
         base_t_targets.append(base_t_target)
         sample_refs.append(
             {

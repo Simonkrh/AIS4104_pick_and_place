@@ -19,11 +19,21 @@ from handeye_utils import (
 )
 
 
+DEFAULT_SESSION_DIR = "calibration/eye_in_hand_charuco"
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Solve eye-in-hand calibration from saved samples."
+        description=(
+            "Solve eye-in-hand calibration from saved samples. Defaults are tuned "
+            "for the current ChArUco session."
+        )
     )
-    parser.add_argument("--session-dir", default="calibration/eye_in_hand")
+    parser.add_argument(
+        "--session-dir",
+        default=DEFAULT_SESSION_DIR,
+        help="Session folder to solve. Defaults to the current ChArUco session path.",
+    )
     parser.add_argument(
         "--report-top",
         type=int,
@@ -76,6 +86,23 @@ def main():
     samples = payload.get("samples", [])
     if len(samples) < 5:
         raise RuntimeError("Need at least 5 samples. Aim for 15-30 good poses.")
+
+    board = payload.get("metadata", {}).get("board", {})
+    board_type = str(board.get("type", "chessboard"))
+    board_cols = int(board.get("cols", 0) or 0)
+    board_rows = int(board.get("rows", 0) or 0)
+    if (
+        board_type == "chessboard"
+        and board_cols > 0
+        and board_rows > 0
+        and board_cols % 2 == 0
+        and board_rows % 2 == 0
+    ):
+        print(
+            "Warning: the sample set uses an even-by-even checkerboard "
+            f"({board_cols}x{board_rows} inner corners). Plain chessboards with this "
+            "geometry can produce ambiguous corner ordering and 180-degree-like pose flips."
+        )
 
     rotations_gripper_to_base = []
     translations_gripper_to_base = []
