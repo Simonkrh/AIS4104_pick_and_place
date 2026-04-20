@@ -1,0 +1,145 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur3e_cell">
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find ur_robot_driver)/urdf/ur.ros2_control.xacro"/>
+  <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro"/>
+
+  <xacro:property name="robot_name" value="ur"/>
+  <xacro:property name="tf_prefix" value=""/>
+  <xacro:property name="joint_limit_params" value="$(find ur_description)/config/ur3e/joint_limits.yaml"/>
+  <xacro:property name="kinematics_params" value="$(find ur_description)/config/ur3e/default_kinematics.yaml"/>
+  <xacro:property name="physical_params" value="$(find ur_description)/config/ur3e/physical_parameters.yaml"/>
+  <xacro:property name="visual_params" value="$(find ur_description)/config/ur3e/visual_parameters.yaml"/>
+  <xacro:property name="transmission_hw_interface" value=""/>
+  <xacro:property name="safety_limits" value="false"/>
+  <xacro:property name="safety_pos_margin" value="0.15"/>
+  <xacro:property name="safety_k_position" value="20"/>
+  <xacro:property name="headless_mode" value="false"/>
+  <xacro:property name="robot_ip" value="0.0.0.0"/>
+  <xacro:property name="script_filename" value=""/>
+  <xacro:property name="output_recipe_filename" value=""/>
+  <xacro:property name="input_recipe_filename" value=""/>
+  <xacro:property name="reverse_ip" value="0.0.0.0"/>
+  <xacro:property name="script_command_port" value="50004"/>
+  <xacro:property name="reverse_port" value="50001"/>
+  <xacro:property name="script_sender_port" value="50002"/>
+  <xacro:property name="trajectory_port" value="50003"/>
+  <xacro:property name="use_tool_communication" value="false"/>
+  <xacro:property name="tool_voltage" value="0"/>
+  <xacro:property name="tool_parity" value="0"/>
+  <xacro:property name="tool_baud_rate" value="115200"/>
+  <xacro:property name="tool_stop_bits" value="1"/>
+  <xacro:property name="tool_rx_idle_chars" value="1.5"/>
+  <xacro:property name="tool_tx_idle_chars" value="3.5"/>
+  <xacro:property name="tool_device_name" value="/tmp/ttyUR"/>
+  <xacro:property name="tool_tcp_port" value="54321"/>
+  <xacro:property name="use_mock_hardware" value="false"/>
+  <xacro:property name="mock_sensor_commands" value="false"/>
+  <xacro:property name="initial_positions_file" value="$(find ur_description)/config/initial_positions.yaml"/>
+
+  <link name="world"/>
+
+  <xacro:ur_robot
+    name="${robot_name}"
+    tf_prefix="${tf_prefix}"
+    parent="world"
+    joint_limits_parameters_file="${joint_limit_params}"
+    kinematics_parameters_file="${kinematics_params}"
+    physical_parameters_file="${physical_params}"
+    visual_parameters_file="${visual_params}"
+    safety_limits="${safety_limits}"
+    safety_pos_margin="${safety_pos_margin}"
+    safety_k_position="${safety_k_position}">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <!--
+    Placeholder geometry for collision-aware planning.
+    Adjust sizes and offsets to roughly match your real setup.
+    These links are fixed to the robot, so MoveIt will treat them as part of the arm.
+  -->
+
+  <link name="${tf_prefix}gripper_body">
+    <visual>
+      <origin xyz="0 0 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.16"/>
+      </geometry>
+      <material name="gripper_gray">
+        <color rgba="0.45 0.45 0.45 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.16"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="${tf_prefix}tool0-gripper_body" type="fixed">
+    <parent link="${tf_prefix}tool0"/>
+    <child link="${tf_prefix}gripper_body"/>
+    <origin xyz="0 0 0.02" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${tf_prefix}camera_body">
+    <visual>
+      <origin xyz="0.045 0 0.015" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.09 0.03 0.03"/>
+      </geometry>
+      <material name="camera_blue">
+        <color rgba="0.15 0.35 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.045 0 0.015" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.09 0.03 0.03"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="${tf_prefix}gripper_body-camera_body" type="fixed">
+    <parent link="${tf_prefix}gripper_body"/>
+    <child link="${tf_prefix}camera_body"/>
+    <origin xyz="0.025 0 0.11" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${tf_prefix}camera_frame"/>
+  <joint name="${tf_prefix}camera_body-camera_frame" type="fixed">
+    <parent link="${tf_prefix}camera_body"/>
+    <child link="${tf_prefix}camera_frame"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:ur_ros2_control
+    name="${robot_name}"
+    tf_prefix="${tf_prefix}"
+    kinematics_parameters_file="${kinematics_params}"
+    transmission_hw_interface="${transmission_hw_interface}"
+    use_mock_hardware="${use_mock_hardware}"
+    mock_sensor_commands="${mock_sensor_commands}"
+    headless_mode="${headless_mode}"
+    initial_positions="${xacro.load_yaml(initial_positions_file)}"
+    use_tool_communication="${use_tool_communication}"
+    tool_voltage="${tool_voltage}"
+    tool_parity="${tool_parity}"
+    tool_baud_rate="${tool_baud_rate}"
+    tool_stop_bits="${tool_stop_bits}"
+    tool_rx_idle_chars="${tool_rx_idle_chars}"
+    tool_tx_idle_chars="${tool_tx_idle_chars}"
+    tool_device_name="${tool_device_name}"
+    tool_tcp_port="${tool_tcp_port}"
+    robot_ip="${robot_ip}"
+    script_filename="${script_filename}"
+    output_recipe_filename="${output_recipe_filename}"
+    input_recipe_filename="${input_recipe_filename}"
+    reverse_ip="${reverse_ip}"
+    script_command_port="${script_command_port}"
+    reverse_port="${reverse_port}"
+    script_sender_port="${script_sender_port}"
+    trajectory_port="${trajectory_port}"
+  />
+</robot>
