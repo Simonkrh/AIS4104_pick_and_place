@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="onrobot_2fg7">
+    <xacro:arg name="prefix" default=""/>
+
+    <xacro:include filename="$(find ur3e_description)/urdf/onrobot_2fg7.xacro"/>
+
+    <link name="world"></link>
+
+    <xacro:onrobot_2fg7 prefix="$(arg prefix)" parent="world">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:onrobot_2fg7>
+
+    <!-- Attach right fingertip -->
+    <xacro:onrobot_2fg7_fingertip prefix="right_" parent="$(arg prefix)right_attachment">
+        <origin xyz="0 0 0" rpy="0 0 3.14159265359"/>
+    </xacro:onrobot_2fg7_fingertip>
+
+    <!-- Attach left fingertip -->
+    <xacro:onrobot_2fg7_fingertip prefix="left_" parent="$(arg prefix)left_attachment">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:onrobot_2fg7_fingertip>
+</robot>
