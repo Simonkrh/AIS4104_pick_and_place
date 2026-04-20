@@ -41,7 +41,7 @@ class Detection3DNode(Node):
         self.declare_parameter("roi_half_size", 2)
         self.declare_parameter("min_depth_m", 0.10)
         self.declare_parameter("max_depth_m", 2.00)
-        self.declare_parameter("enable_temporal_filter", True)
+        self.declare_parameter("enable_temporal_filter", False)
         self.declare_parameter("smoothing_alpha", 0.4)
         self.declare_parameter("max_jump_m", 0.08)
         self.declare_parameter("sync_queue_size", 10)
@@ -250,7 +250,8 @@ class Detection3DNode(Node):
         dy = y - prev[1]
         dz = z - prev[2]
         if np.sqrt(dx * dx + dy * dy + dz * dz) > self.max_jump_m:
-            return prev
+            self.track_state[label] = (x, y, z)
+            return x, y, z
 
         alpha = min(max(self.smoothing_alpha, 0.0), 1.0)
         xf = alpha * x + (1.0 - alpha) * prev[0]

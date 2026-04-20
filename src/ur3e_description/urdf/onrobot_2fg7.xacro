@@ -6,6 +6,8 @@
 
   <xacro:macro name="onrobot_2fg7" params="prefix parent *origin">
 
+    <xacro:property name="fixed_grip_offset" value="0.02" />
+
     <link name="${prefix}base_link">
       <inertial>
         <origin xyz="-4.898915958379213e-05 2.84756960271082e-06 0.06811082379774974" rpy="0 0 0" />
@@ -31,22 +33,16 @@
 
     <link name="${prefix}left_attachment"></link>
 
-    <joint name="${prefix}gripper_joint" type="prismatic">
-      <origin xyz="0.0 0.0 0.11" rpy="0 0 0" />
+    <joint name="${prefix}gripper_joint" type="fixed">
+      <origin xyz="-${fixed_grip_offset} 0.0 0.11" rpy="0 0 0" />
       <parent link="${prefix}base_link" />
       <child link="${prefix}left_attachment" />
-      <axis xyz="-1.0 0.0 0.0" />
-      <limit lower="0.0115" upper="0.0305" effort="140" velocity="0.45" />
-      <!-- total 0.38 -->
     </joint>
 
-    <joint name="${prefix}right_finger_joint" type="prismatic">
-      <origin xyz="0.0 0.0 0.11" rpy="0 0 0" />
+    <joint name="${prefix}right_finger_joint" type="fixed">
+      <origin xyz="${fixed_grip_offset} 0.0 0.11" rpy="0 0 0" />
       <parent link="${prefix}base_link" />
       <child link="${prefix}right_attachment" />
-      <axis xyz="1.0 0.0 0.0" />
-      <limit lower="0.0115" upper="0.0305" effort="140" velocity="0.45" />
-      <mimic joint="${prefix}gripper_joint" multiplier="1.0" />
     </joint>
 
     <joint name="${prefix}2fg7_attach_joint" type="fixed">
