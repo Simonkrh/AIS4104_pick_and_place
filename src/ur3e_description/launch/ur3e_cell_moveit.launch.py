@@ -15,21 +15,40 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     launch_rviz = LaunchConfiguration("launch_rviz")
     package_share = Path(get_package_share_directory("ur3e_description"))
+    semantic_robot_name = "ur3e_cell"
 
     custom_urdf_path = str(
         package_share / "urdf" / "ur3e_cell.urdf.xacro"
     )
+    custom_srdf_path = str(
+        package_share / "srdf" / "ur3e_cell.srdf.xacro"
+    )
     trac_ik_kinematics_path = str(
         package_share / "config" / "trac_ik_kinematics.yaml"
+    )
+    custom_joint_limits_path = str(
+        package_share / "config" / "joint_limits.yaml"
     )
 
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="ur_moveit_config")
         .robot_description(custom_urdf_path)
-        .robot_description_semantic(Path("srdf") / "ur.srdf.xacro", {"name": "ur3e"})
+        .robot_description_semantic(
+            custom_srdf_path,
+            {"name": semantic_robot_name},
+        )
         .robot_description_kinematics(trac_ik_kinematics_path)
+        .joint_limits(custom_joint_limits_path)
         .to_moveit_configs()
     )
+
+    ompl_pipeline = moveit_config.planning_pipelines.get("ompl", {})
+    request_adapters = list(ompl_pipeline.get("request_adapters", []))
+    ompl_pipeline["request_adapters"] = [
+        adapter
+        for adapter in request_adapters
+        if adapter != "default_planning_request_adapters/CheckStartStateBounds"
+    ]
 
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",

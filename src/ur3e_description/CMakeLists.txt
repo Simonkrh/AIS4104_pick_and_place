@@ -4,7 +4,7 @@ project(ur3e_description)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY config launch urdf
+  DIRECTORY config launch srdf urdf
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -271,21 +271,28 @@ class Detection3DTransformNode(Node):
             return
 
         if self.best_pose_pub is not None:
+            best_z = float(best.bbox.center.position.z) + max(
+                0.5 * float(best.bbox.size.z), 0.0
+            )
             pose = PoseStamped()
             pose.header.stamp = publish_stamp
             pose.header.frame_id = out.header.frame_id
             pose.pose.position = best.bbox.center.position
+            pose.pose.position.z = best_z
             pose.pose.orientation.w = 1.0
             self.best_pose_pub.publish(pose)
 
         if self.tf_broadcaster is not None:
+            best_z = float(best.bbox.center.position.z) + max(
+                0.5 * float(best.bbox.size.z), 0.0
+            )
             tf_msg = TransformStamped()
             tf_msg.header.stamp = publish_stamp
             tf_msg.header.frame_id = out.header.frame_id
             tf_msg.child_frame_id = self.best_tf_child_frame
             tf_msg.transform.translation.x = float(best.bbox.center.position.x)
             tf_msg.transform.translation.y = float(best.bbox.center.position.y)
-            tf_msg.transform.translation.z = float(best.bbox.center.position.z)
+            tf_msg.transform.translation.z = best_z
             tf_msg.transform.rotation.w = 1.0
             self.tf_broadcaster.sendTransform(tf_msg)
 

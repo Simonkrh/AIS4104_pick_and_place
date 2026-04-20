@@ -14,7 +14,6 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-
 class PickMoveItExecutorNode(Node):
     def __init__(self):
         super().__init__("pick_moveit_executor_node")

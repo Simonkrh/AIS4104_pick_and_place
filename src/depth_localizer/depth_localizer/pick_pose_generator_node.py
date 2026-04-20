@@ -41,7 +41,7 @@ class PickPoseGeneratorNode(Node):
         self.declare_parameter("input_topic", "/pick_target_pose")
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
-        self.declare_parameter("approach_offset_z", 0.10)
+        self.declare_parameter("approach_offset_z", 0.35)
         self.declare_parameter("grasp_offset_z", 0.02)
         self.declare_parameter("tool_roll", math.pi)
         self.declare_parameter("tool_pitch", 0.0)
