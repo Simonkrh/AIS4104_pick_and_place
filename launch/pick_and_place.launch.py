@@ -147,11 +147,10 @@ def generate_launch_description():
 
     moveit_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            [FindPackageShare("ur_moveit_config"), "/launch/ur_moveit.launch.py"]
+            [FindPackageShare("ur3e_description"), "/launch/ur3e_cell_moveit.launch.py"]
         ),
         condition=IfCondition(LaunchConfiguration("launch_moveit")),
         launch_arguments={
-            "ur_type": LaunchConfiguration("ur_type"),
             "launch_rviz": LaunchConfiguration("moveit_launch_rviz"),
         }.items(),
     )
@@ -205,12 +204,12 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "launch_moveit",
                 default_value="false",
-                description="Also launch ur_moveit_config/move_group on this machine.",
+                description="Also launch the local UR3e cell MoveIt/move_group on this machine.",
             ),
             DeclareLaunchArgument(
                 "moveit_launch_rviz",
                 default_value="true",
-                description="Launch RViz together with ur_moveit_config when launch_moveit is true.",
+                description="Launch RViz together with the local MoveIt instance when launch_moveit is true.",
             ),
             DeclareLaunchArgument("ur_type", default_value="ur3e"),
             DeclareLaunchArgument(

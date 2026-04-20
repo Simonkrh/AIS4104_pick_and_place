@@ -14,6 +14,7 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>trac_ik_kinematics_plugin</exec_depend>
   <exec_depend>ur_description</exec_depend>
   <exec_depend>ur_moveit_config</exec_depend>
   <exec_depend>ur_robot_driver</exec_depend>
