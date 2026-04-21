@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
+import math
+import time
 from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.srv import GetMotionPlan
 from pymoveit2 import MoveIt2
+from pymoveit2.moveit2 import MoveIt2State
 from pymoveit2.robots import ur
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -20,12 +24,15 @@ class PickMoveItExecutorNode(Node):
     BASE_LINK_NAME = "base_link"
     END_EFFECTOR_NAME = "gripper_tcp"
     TARGET_LINK = "gripper_tcp"
+    JOINT_TOLERANCE = 0.01
     MAX_POSE_AGE_SEC = 2.0
     POSITION_TOLERANCE = 0.005
     ORIENTATION_TOLERANCE = 0.05
     CARTESIAN_GRASP = False
     CARTESIAN_MAX_STEP = 0.0025
     MOVEIT_WAIT_SECONDS = 5.0
+    EXECUTION_TIMEOUT_SEC = 30.0
+    EXECUTION_POLL_INTERVAL_SEC = 0.05
 
     def __init__(self):
         super().__init__("pick_moveit_executor_node")
@@ -33,10 +40,20 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("status_topic", "/pick_execution_status")
+        self.declare_parameter(
+            "ready_joint_positions_deg",
+            [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
+        )
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
+        self.ready_joint_positions_deg = self._parse_joint_positions_deg(
+            self.get_parameter("ready_joint_positions_deg").value
+        )
+        self.ready_joint_positions_rad = [
+            math.radians(value) for value in self.ready_joint_positions_deg
+        ]
 
         self.callback_group = ReentrantCallbackGroup()
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
@@ -79,6 +96,18 @@ class PickMoveItExecutorNode(Node):
             self._handle_execute_pick,
             callback_group=self.callback_group,
         )
+        self.create_service(
+            Trigger,
+            "~/move_to_ready_pose",
+            self._handle_move_to_ready_pose,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
+            "~/move_to_start_pose",
+            self._handle_move_to_ready_pose,
+            callback_group=self.callback_group,
+        )
 
         self._moveit = MoveIt2(
             node=self,
@@ -89,6 +118,8 @@ class PickMoveItExecutorNode(Node):
             callback_group=self.callback_group,
             use_move_group_action=True,
         )
+        self._moveit.max_velocity = 1.0
+        self._moveit.max_acceleration = 1.0
 
         self._plan_client = self.create_client(
             srv_type=GetMotionPlan,
@@ -105,11 +136,41 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(f"Subscribing grasp pose: {self.grasp_topic}")
         self.get_logger().info(f"Publishing execution status: {self.status_topic}")
         self.get_logger().info(
-            "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick"
+            "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick, "
+            "~/move_to_ready_pose, ~/move_to_start_pose"
         )
         self.get_logger().info(
             f"MoveIt group={self.GROUP_NAME}, base={self.BASE_LINK_NAME}, tool={self.TARGET_LINK}"
         )
+        self.get_logger().info(
+            f"Ready pose joint targets (deg): {self.ready_joint_positions_deg}"
+        )
+
+    def _parse_joint_positions_deg(self, value) -> list[float]:
+        if isinstance(value, str):
+            try:
+                parsed_value = ast.literal_eval(value)
+            except (SyntaxError, ValueError) as exc:
+                raise ValueError(
+                    "ready_joint_positions_deg must be a list string like "
+                    '"[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]".'
+                ) from exc
+        else:
+            parsed_value = value
+
+        if not isinstance(parsed_value, (list, tuple)):
+            raise ValueError("ready_joint_positions_deg must contain six joint values.")
+
+        joint_positions = [float(item) for item in parsed_value]
+        expected_joint_count = len(ur.joint_names(prefix=""))
+        if len(joint_positions) != expected_joint_count:
+            raise ValueError(
+                "ready_joint_positions_deg must contain "
+                f"{expected_joint_count} values in UR order "
+                "[shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3]."
+            )
+
+        return joint_positions
 
     def _on_approach_pose(self, msg: PoseStamped) -> None:
         self.latest_approach_pose = msg
@@ -133,6 +194,21 @@ class PickMoveItExecutorNode(Node):
             )
         return ready
 
+    def _wait_for_motion_completion(self, label: str) -> bool:
+        deadline = time.monotonic() + self.EXECUTION_TIMEOUT_SEC
+
+        while time.monotonic() < deadline:
+            state = self._moveit.query_state()
+            if state == MoveIt2State.IDLE:
+                return bool(self._moveit.motion_suceeded)
+            time.sleep(self.EXECUTION_POLL_INTERVAL_SEC)
+
+        self.get_logger().warn(
+            f"Timed out waiting for {label} to finish after "
+            f"{self.EXECUTION_TIMEOUT_SEC:.1f}s."
+        )
+        return False
+
     def _pose_is_fresh(self, received_ns: Optional[int], label: str) -> bool:
         if received_ns is None:
             self.get_logger().warn(
@@ -147,6 +223,37 @@ class PickMoveItExecutorNode(Node):
             f"({age_sec:.2f}s since receipt, limit {self.MAX_POSE_AGE_SEC:.2f}s)."
         )
         return False
+
+    def _execute_joint_configuration(
+        self,
+        label: str,
+        joint_positions_rad: list[float],
+        joint_positions_deg: list[float],
+    ) -> tuple[bool, str]:
+        if not self._moveit_ready():
+            return False, "MoveIt planning service is not available."
+
+        joint_names = ur.joint_names(prefix="")
+        joints_summary = ", ".join(
+            f"{name}={value:.1f} deg"
+            for name, value in zip(joint_names, joint_positions_deg, strict=True)
+        )
+        self._publish_status(f"Planning {label} joint move: {joints_summary}")
+
+        try:
+            self._moveit.move_to_configuration(
+                joint_positions=joint_positions_rad,
+                joint_names=joint_names,
+                tolerance=self.JOINT_TOLERANCE,
+            )
+            success = self._wait_for_motion_completion(label)
+        except Exception as exc:
+            return False, f"MoveIt failed during {label}: {exc}"
+
+        if success:
+            self._publish_status(f"{label.capitalize()} joint move completed.")
+            return True, f"{label.capitalize()} joint move completed."
+        return False, f"{label.capitalize()} joint move failed."
 
     def _execute_pose(
         self,
@@ -180,7 +287,7 @@ class PickMoveItExecutorNode(Node):
                 cartesian=cartesian,
                 cartesian_max_step=self.CARTESIAN_MAX_STEP,
             )
-            success = bool(self._moveit.wait_until_executed())
+            success = self._wait_for_motion_completion(label)
         except Exception as exc:
             return False, f"MoveIt failed during {label}: {exc}"
 
@@ -230,6 +337,15 @@ class PickMoveItExecutorNode(Node):
         )
         response.success = ok
         response.message = message
+        return response
+
+    def _handle_move_to_ready_pose(self, request, response):
+        del request
+        response.success, response.message = self._execute_joint_configuration(
+            "ready pose",
+            self.ready_joint_positions_rad,
+            self.ready_joint_positions_deg,
+        )
         return response
 
 

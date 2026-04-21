@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -38,6 +40,12 @@ def _maybe_launch_realsense(context):
 
 
 def generate_launch_description():
+    repo_root = Path(__file__).resolve().parents[1]
+    default_model_path = str(repo_root / "models" / "pick_place_best.pt")
+    default_handeye_result_path = str(
+        repo_root / "calibration" / "eye_in_hand_charuco" / "handeye_result.json"
+    )
+
     image_topic = LaunchConfiguration("image_topic")
     depth_topic = LaunchConfiguration("depth_topic")
     camera_info_topic = LaunchConfiguration("camera_info_topic")
@@ -57,23 +65,23 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "camera_info_topic", default_value="/realsense_cam/color/camera_info"
             ),
-            DeclareLaunchArgument("model", default_value="models/pick_place_best.pt"),
+            DeclareLaunchArgument("model", default_value=default_model_path),
             DeclareLaunchArgument("conf", default_value="0.4"),
             DeclareLaunchArgument("device", default_value="cpu"),
             DeclareLaunchArgument(
                 "handeye_result_file",
-                default_value="calibration/eye_in_hand_charuco/handeye_result.json",
+                default_value=default_handeye_result_path,
             ),
+            DeclareLaunchArgument("pick_approach_offset_z", default_value="0.01"),
+            DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.01"),
             DeclareLaunchArgument(
-                "handeye_child_frame",
-                default_value="",
+                "ready_joint_positions_deg",
+                default_value="[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]",
                 description=(
-                    "Optional TF child frame for the calibrated camera pose, "
-                    "for example realsense_cam_link."
+                    "Fixed UR joint target in degrees ordered as "
+                    "[shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3]."
                 ),
             ),
-            DeclareLaunchArgument("pick_approach_offset_z", default_value="0.10"),
-            DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.02"),
             OpaqueFunction(function=_maybe_launch_realsense),
             Node(
                 package="yolo_detector",
@@ -111,7 +119,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {"handeye_result_file": LaunchConfiguration("handeye_result_file")},
-                    {"child_frame": LaunchConfiguration("handeye_child_frame")},
+                    {"child_frame": "realsense_cam_link"},
                 ],
             ),
             Node(
@@ -151,6 +159,13 @@ def generate_launch_description():
                 executable="pick_moveit_executor_node",
                 name="pick_moveit_executor_node",
                 output="screen",
+                parameters=[
+                    {
+                        "ready_joint_positions_deg": LaunchConfiguration(
+                            "ready_joint_positions_deg"
+                        )
+                    }
+                ],
             ),
         ]
     )

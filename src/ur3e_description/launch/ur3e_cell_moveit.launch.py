@@ -4,8 +4,10 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -14,6 +16,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
     launch_rviz = LaunchConfiguration("launch_rviz")
+    launch_robot_state_publisher = LaunchConfiguration("launch_robot_state_publisher")
     package_share = Path(get_package_share_directory("ur3e_description"))
     semantic_robot_name = "ur3e_cell"
 
@@ -84,11 +87,26 @@ def generate_launch_description():
         ],
     )
 
+    robot_state_publisher_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            [
+                FindPackageShare("ur3e_description"),
+                "/launch/ur3e_cell_rsp.launch.py",
+            ]
+        ),
+        condition=IfCondition(launch_robot_state_publisher),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "launch_rviz", default_value="true", description="Launch RViz?"
             ),
+            DeclareLaunchArgument(
+                "launch_robot_state_publisher",
+                default_value="true",
+            ),
+            robot_state_publisher_launch,
             move_group_node,
             rviz_node,
         ]

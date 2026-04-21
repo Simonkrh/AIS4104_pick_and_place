@@ -5,84 +5,84 @@
   <xacro:include filename="$(find ur_description)/urdf/inc/ur_transmissions.xacro" />
   <xacro:include filename="$(find ur3e_description)/urdf/onrobot_2fg7.xacro" />
 
-  <xacro:property name="robot_name" value="ur" />
-  <xacro:property name="tf_prefix" value="" />
-  <xacro:property name="joint_limit_params"
-    value="$(find ur_description)/config/ur3e/joint_limits.yaml" />
-  <xacro:property name="kinematics_params"
-    value="$(find ur_description)/config/ur3e/default_kinematics.yaml" />
-  <xacro:property name="physical_params"
-    value="$(find ur_description)/config/ur3e/physical_parameters.yaml" />
-  <xacro:property name="visual_params"
-    value="$(find ur_description)/config/ur3e/visual_parameters.yaml" />
-  <xacro:property name="transmission_hw_interface" value="" />
-  <xacro:property name="safety_limits" value="false" />
-  <xacro:property name="safety_pos_margin" value="0.15" />
-  <xacro:property name="safety_k_position" value="20" />
-  <xacro:property name="headless_mode" value="false" />
-  <xacro:property name="robot_ip" value="0.0.0.0" />
-  <xacro:property name="script_filename" value="" />
-  <xacro:property name="output_recipe_filename" value="" />
-  <xacro:property name="input_recipe_filename" value="" />
-  <xacro:property name="reverse_ip" value="0.0.0.0" />
-  <xacro:property name="script_command_port" value="50004" />
-  <xacro:property name="reverse_port" value="50001" />
-  <xacro:property name="script_sender_port" value="50002" />
-  <xacro:property name="trajectory_port" value="50003" />
-  <xacro:property name="use_tool_communication" value="false" />
-  <xacro:property name="tool_voltage" value="0" />
-  <xacro:property name="tool_parity" value="0" />
-  <xacro:property name="tool_baud_rate" value="115200" />
-  <xacro:property name="tool_stop_bits" value="1" />
-  <xacro:property name="tool_rx_idle_chars" value="1.5" />
-  <xacro:property name="tool_tx_idle_chars" value="3.5" />
-  <xacro:property name="tool_device_name" value="/tmp/ttyUR" />
-  <xacro:property name="tool_tcp_port" value="54321" />
-  <xacro:property name="use_mock_hardware" value="false" />
-  <xacro:property name="mock_sensor_commands" value="false" />
-  <xacro:property name="initial_positions_file"
-    value="$(find ur_description)/config/initial_positions.yaml" />
+  <xacro:arg name="name" default="ur" />
+  <xacro:arg name="tf_prefix" default="" />
+  <xacro:arg name="joint_limit_params"
+    default="$(find ur_description)/config/ur3e/joint_limits.yaml" />
+  <xacro:arg name="kinematics_params"
+    default="$(find ur_description)/config/ur3e/default_kinematics.yaml" />
+  <xacro:arg name="physical_params"
+    default="$(find ur_description)/config/ur3e/physical_parameters.yaml" />
+  <xacro:arg name="visual_params"
+    default="$(find ur_description)/config/ur3e/visual_parameters.yaml" />
+  <xacro:arg name="transmission_hw_interface" default="" />
+  <xacro:arg name="safety_limits" default="false" />
+  <xacro:arg name="safety_pos_margin" default="0.15" />
+  <xacro:arg name="safety_k_position" default="20" />
+  <xacro:arg name="headless_mode" default="false" />
+  <xacro:arg name="robot_ip" default="0.0.0.0" />
+  <xacro:arg name="script_filename" default="" />
+  <xacro:arg name="output_recipe_filename" default="" />
+  <xacro:arg name="input_recipe_filename" default="" />
+  <xacro:arg name="reverse_ip" default="0.0.0.0" />
+  <xacro:arg name="script_command_port" default="50004" />
+  <xacro:arg name="reverse_port" default="50001" />
+  <xacro:arg name="script_sender_port" default="50002" />
+  <xacro:arg name="trajectory_port" default="50003" />
+  <xacro:arg name="use_tool_communication" default="false" />
+  <xacro:arg name="tool_voltage" default="0" />
+  <xacro:arg name="tool_parity" default="0" />
+  <xacro:arg name="tool_baud_rate" default="115200" />
+  <xacro:arg name="tool_stop_bits" default="1" />
+  <xacro:arg name="tool_rx_idle_chars" default="1.5" />
+  <xacro:arg name="tool_tx_idle_chars" default="3.5" />
+  <xacro:arg name="tool_device_name" default="/tmp/ttyUR" />
+  <xacro:arg name="tool_tcp_port" default="54321" />
+  <xacro:arg name="use_mock_hardware" default="false" />
+  <xacro:arg name="mock_sensor_commands" default="false" />
+  <xacro:arg name="initial_positions_file"
+    default="$(find ur_description)/config/initial_positions.yaml" />
 
   <link name="world" />
 
   <xacro:ur_robot
-    name="${robot_name}"
-    tf_prefix="${tf_prefix}"
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
     parent="world"
-    joint_limits_parameters_file="${joint_limit_params}"
-    kinematics_parameters_file="${kinematics_params}"
-    physical_parameters_file="${physical_params}"
-    visual_parameters_file="${visual_params}"
-    safety_limits="${safety_limits}"
-    safety_pos_margin="${safety_pos_margin}"
-    safety_k_position="${safety_k_position}">
+    joint_limits_parameters_file="$(arg joint_limit_params)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+    physical_parameters_file="$(arg physical_params)"
+    visual_parameters_file="$(arg visual_params)"
+    safety_limits="$(arg safety_limits)"
+    safety_pos_margin="$(arg safety_pos_margin)"
+    safety_k_position="$(arg safety_k_position)">
     <origin xyz="0 0 0" rpy="0 0 0" />
   </xacro:ur_robot>
 
-  <xacro:onrobot_2fg7 prefix="${tf_prefix}gripper_" parent="${tf_prefix}tool0">
+  <xacro:onrobot_2fg7 prefix="$(arg tf_prefix)gripper_" parent="$(arg tf_prefix)tool0">
     <origin xyz="0 0 0" rpy="0 0 0" />
   </xacro:onrobot_2fg7>
 
   <xacro:onrobot_2fg7_fingertip
-    prefix="${tf_prefix}gripper_right_"
-    parent="${tf_prefix}gripper_right_attachment">
+    prefix="$(arg tf_prefix)gripper_right_"
+    parent="$(arg tf_prefix)gripper_right_attachment">
     <origin xyz="0 0 0" rpy="0 0 3.14159265359" />
   </xacro:onrobot_2fg7_fingertip>
 
   <xacro:onrobot_2fg7_fingertip
-    prefix="${tf_prefix}gripper_left_"
-    parent="${tf_prefix}gripper_left_attachment">
+    prefix="$(arg tf_prefix)gripper_left_"
+    parent="$(arg tf_prefix)gripper_left_attachment">
     <origin xyz="0 0 0" rpy="0 0 0" />
   </xacro:onrobot_2fg7_fingertip>
 
-  <link name="${tf_prefix}gripper_tcp" />
-  <joint name="${tf_prefix}gripper_base_link-gripper_tcp" type="fixed">
-    <parent link="${tf_prefix}gripper_base_link" />
-    <child link="${tf_prefix}gripper_tcp" />
+  <link name="$(arg tf_prefix)gripper_tcp" />
+  <joint name="$(arg tf_prefix)gripper_base_link-gripper_tcp" type="fixed">
+    <parent link="$(arg tf_prefix)gripper_base_link" />
+    <child link="$(arg tf_prefix)gripper_tcp" />
     <origin xyz="0 0 0.15" rpy="0 0 0" />
   </joint>
 
-  <link name="${tf_prefix}camera_body">
+  <link name="$(arg tf_prefix)camera_body">
     <visual>
       <origin xyz="0 0.03 0.015" rpy="0 0 0" />
       <geometry>
@@ -100,45 +100,45 @@
     </collision>
   </link>
 
-  <joint name="${tf_prefix}gripper_base_link-camera_body" type="fixed">
-    <parent link="${tf_prefix}gripper_base_link" />
-    <child link="${tf_prefix}camera_body" />
+  <joint name="$(arg tf_prefix)gripper_base_link-camera_body" type="fixed">
+    <parent link="$(arg tf_prefix)gripper_base_link" />
+    <child link="$(arg tf_prefix)camera_body" />
     <origin xyz="0 0.0315 -0.0125" rpy="0 0 0" />
   </joint>
 
-  <link name="${tf_prefix}camera_frame" />
-  <joint name="${tf_prefix}camera_body-camera_frame" type="fixed">
-    <parent link="${tf_prefix}camera_body" />
-    <child link="${tf_prefix}camera_frame" />
+  <link name="$(arg tf_prefix)camera_frame" />
+  <joint name="$(arg tf_prefix)camera_body-camera_frame" type="fixed">
+    <parent link="$(arg tf_prefix)camera_body" />
+    <child link="$(arg tf_prefix)camera_frame" />
     <origin xyz="0 0 0" rpy="0 0 0" />
   </joint>
 
   <xacro:ur_ros2_control
-    name="${robot_name}"
-    tf_prefix="${tf_prefix}"
-    kinematics_parameters_file="${kinematics_params}"
-    transmission_hw_interface="${transmission_hw_interface}"
-    use_mock_hardware="${use_mock_hardware}"
-    mock_sensor_commands="${mock_sensor_commands}"
-    headless_mode="${headless_mode}"
-    initial_positions="${xacro.load_yaml(initial_positions_file)}"
-    use_tool_communication="${use_tool_communication}"
-    tool_voltage="${tool_voltage}"
-    tool_parity="${tool_parity}"
-    tool_baud_rate="${tool_baud_rate}"
-    tool_stop_bits="${tool_stop_bits}"
-    tool_rx_idle_chars="${tool_rx_idle_chars}"
-    tool_tx_idle_chars="${tool_tx_idle_chars}"
-    tool_device_name="${tool_device_name}"
-    tool_tcp_port="${tool_tcp_port}"
-    robot_ip="${robot_ip}"
-    script_filename="${script_filename}"
-    output_recipe_filename="${output_recipe_filename}"
-    input_recipe_filename="${input_recipe_filename}"
-    reverse_ip="${reverse_ip}"
-    script_command_port="${script_command_port}"
-    reverse_port="${reverse_port}"
-    script_sender_port="${script_sender_port}"
-    trajectory_port="${trajectory_port}"
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+    transmission_hw_interface="$(arg transmission_hw_interface)"
+    use_mock_hardware="$(arg use_mock_hardware)"
+    mock_sensor_commands="$(arg mock_sensor_commands)"
+    headless_mode="$(arg headless_mode)"
+    initial_positions="${xacro.load_yaml('$(arg initial_positions_file)')}"
+    use_tool_communication="$(arg use_tool_communication)"
+    tool_voltage="$(arg tool_voltage)"
+    tool_parity="$(arg tool_parity)"
+    tool_baud_rate="$(arg tool_baud_rate)"
+    tool_stop_bits="$(arg tool_stop_bits)"
+    tool_rx_idle_chars="$(arg tool_rx_idle_chars)"
+    tool_tx_idle_chars="$(arg tool_tx_idle_chars)"
+    tool_device_name="$(arg tool_device_name)"
+    tool_tcp_port="$(arg tool_tcp_port)"
+    robot_ip="$(arg robot_ip)"
+    script_filename="$(arg script_filename)"
+    output_recipe_filename="$(arg output_recipe_filename)"
+    input_recipe_filename="$(arg input_recipe_filename)"
+    reverse_ip="$(arg reverse_ip)"
+    script_command_port="$(arg script_command_port)"
+    reverse_port="$(arg reverse_port)"
+    script_sender_port="$(arg script_sender_port)"
+    trajectory_port="$(arg trajectory_port)"
   />
 </robot>
