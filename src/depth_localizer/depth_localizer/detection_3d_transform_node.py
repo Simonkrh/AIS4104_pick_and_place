@@ -49,18 +49,6 @@ class Detection3DTransformNode(Node):
     def __init__(self):
         super().__init__("detection_3d_transform_node")
 
-        def parse_bool(value) -> bool:
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, (int, float)):
-                return bool(value)
-            text = str(value).strip().lower()
-            if text in ("1", "true", "yes", "on"):
-                return True
-            if text in ("0", "false", "no", "off", ""):
-                return False
-            return bool(text)
-
         self.declare_parameter("input_topic", "/yolo/detections_3d")
         self.declare_parameter("output_topic", "/yolo/detections_3d_base")
         self.declare_parameter("target_frame", "base_link")
@@ -77,7 +65,7 @@ class Detection3DTransformNode(Node):
         self.output_topic = str(self.get_parameter("output_topic").value)
         self.target_frame = str(self.get_parameter("target_frame").value)
         self.tf_timeout_sec = float(self.get_parameter("tf_timeout_sec").value)
-        self.allow_latest_tf_fallback = parse_bool(
+        self.allow_latest_tf_fallback = bool(
             self.get_parameter("allow_latest_tf_fallback").value
         )
         self.max_input_stamp_age_sec = float(

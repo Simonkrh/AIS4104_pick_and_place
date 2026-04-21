@@ -14,48 +14,29 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+
 class PickMoveItExecutorNode(Node):
+    GROUP_NAME = "ur_manipulator"
+    BASE_LINK_NAME = "base_link"
+    END_EFFECTOR_NAME = "gripper_tcp"
+    TARGET_LINK = "gripper_tcp"
+    MAX_POSE_AGE_SEC = 2.0
+    POSITION_TOLERANCE = 0.005
+    ORIENTATION_TOLERANCE = 0.05
+    CARTESIAN_GRASP = False
+    CARTESIAN_MAX_STEP = 0.0025
+    MOVEIT_WAIT_SECONDS = 5.0
+
     def __init__(self):
         super().__init__("pick_moveit_executor_node")
 
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("status_topic", "/pick_execution_status")
-        self.declare_parameter("ur_type", "ur3e")
-        self.declare_parameter("group_name", "ur_manipulator")
-        self.declare_parameter("base_link_name", "")
-        self.declare_parameter("end_effector_name", "")
-        self.declare_parameter("target_link", "")
-        self.declare_parameter("max_pose_age_sec", 2.0)
-        self.declare_parameter("position_tolerance", 0.005)
-        self.declare_parameter("orientation_tolerance", 0.05)
-        self.declare_parameter("cartesian_grasp", False)
-        self.declare_parameter("cartesian_max_step", 0.0025)
-        self.declare_parameter("wait_for_moveit_seconds", 0.0)
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
-        self.ur_type = str(self.get_parameter("ur_type").value).strip() or "ur3e"
-        self.group_name = str(self.get_parameter("group_name").value).strip() or "ur_manipulator"
-        self.max_pose_age_sec = float(self.get_parameter("max_pose_age_sec").value)
-        self.position_tolerance = float(self.get_parameter("position_tolerance").value)
-        self.orientation_tolerance = float(
-            self.get_parameter("orientation_tolerance").value
-        )
-        self.cartesian_grasp = bool(self.get_parameter("cartesian_grasp").value)
-        self.cartesian_max_step = float(self.get_parameter("cartesian_max_step").value)
-        self.wait_for_moveit_seconds = float(
-            self.get_parameter("wait_for_moveit_seconds").value
-        )
-
-        base_link_name = str(self.get_parameter("base_link_name").value).strip()
-        end_effector_name = str(self.get_parameter("end_effector_name").value).strip()
-        target_link = str(self.get_parameter("target_link").value).strip()
-
-        self.base_link_name = base_link_name or ur.base_link_name(prefix="")
-        self.end_effector_name = end_effector_name or ur.end_effector_name(prefix="")
-        self.target_link = target_link or self.end_effector_name
 
         self.callback_group = ReentrantCallbackGroup()
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
@@ -102,9 +83,9 @@ class PickMoveItExecutorNode(Node):
         self._moveit = MoveIt2(
             node=self,
             joint_names=ur.joint_names(prefix=""),
-            base_link_name=self.base_link_name,
-            end_effector_name=self.end_effector_name,
-            group_name=self.group_name,
+            base_link_name=self.BASE_LINK_NAME,
+            end_effector_name=self.END_EFFECTOR_NAME,
+            group_name=self.GROUP_NAME,
             callback_group=self.callback_group,
             use_move_group_action=True,
         )
@@ -115,18 +96,19 @@ class PickMoveItExecutorNode(Node):
             callback_group=self.callback_group,
         )
 
-        if self.wait_for_moveit_seconds > 0.0:
-            self.get_logger().info(
-                f"Waiting up to {self.wait_for_moveit_seconds:.1f}s for MoveIt planning service..."
-            )
-            self._plan_client.wait_for_service(timeout_sec=self.wait_for_moveit_seconds)
+        self.get_logger().info(
+            f"Waiting up to {self.MOVEIT_WAIT_SECONDS:.1f}s for MoveIt planning service..."
+        )
+        self._plan_client.wait_for_service(timeout_sec=self.MOVEIT_WAIT_SECONDS)
 
         self.get_logger().info(f"Subscribing approach pose: {self.approach_topic}")
         self.get_logger().info(f"Subscribing grasp pose: {self.grasp_topic}")
         self.get_logger().info(f"Publishing execution status: {self.status_topic}")
-        self.get_logger().info("Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick")
         self.get_logger().info(
-            f"MoveIt group={self.group_name}, base={self.base_link_name}, tool={self.target_link}, ur_type={self.ur_type}"
+            "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick"
+        )
+        self.get_logger().info(
+            f"MoveIt group={self.GROUP_NAME}, base={self.BASE_LINK_NAME}, tool={self.TARGET_LINK}"
         )
 
     def _on_approach_pose(self, msg: PoseStamped) -> None:
@@ -151,19 +133,18 @@ class PickMoveItExecutorNode(Node):
             )
         return ready
 
-    def _pose_is_fresh(
-        self, pose: PoseStamped, received_ns: Optional[int], label: str
-    ) -> bool:
-        if self.max_pose_age_sec <= 0.0:
-            return True
+    def _pose_is_fresh(self, received_ns: Optional[int], label: str) -> bool:
         if received_ns is None:
-            self.get_logger().warn(f"No local receipt timestamp recorded for {label} pose.")
+            self.get_logger().warn(
+                f"No local receipt timestamp recorded for {label} pose."
+            )
             return False
         age_sec = (self.get_clock().now().nanoseconds - received_ns) / 1_000_000_000.0
-        if age_sec <= self.max_pose_age_sec:
+        if age_sec <= self.MAX_POSE_AGE_SEC:
             return True
         self.get_logger().warn(
-            f"Cached {label} pose is stale ({age_sec:.2f}s since receipt, limit {self.max_pose_age_sec:.2f}s)."
+            f"Cached {label} pose is stale "
+            f"({age_sec:.2f}s since receipt, limit {self.MAX_POSE_AGE_SEC:.2f}s)."
         )
         return False
 
@@ -178,8 +159,11 @@ class PickMoveItExecutorNode(Node):
             return False, f"No cached {label} pose yet."
         if not self._moveit_ready():
             return False, "MoveIt planning service is not available."
-        if not self._pose_is_fresh(pose, received_ns, label):
-            return False, f"{label.capitalize()} pose is stale; reacquire the target first."
+        if not self._pose_is_fresh(received_ns, label):
+            return (
+                False,
+                f"{label.capitalize()} pose is stale; reacquire the target first.",
+            )
 
         self._publish_status(
             f"Planning {label} move to "
@@ -190,11 +174,11 @@ class PickMoveItExecutorNode(Node):
         try:
             self._moveit.move_to_pose(
                 pose=pose,
-                target_link=self.target_link,
-                tolerance_position=self.position_tolerance,
-                tolerance_orientation=self.orientation_tolerance,
+                target_link=self.TARGET_LINK,
+                tolerance_position=self.POSITION_TOLERANCE,
+                tolerance_orientation=self.ORIENTATION_TOLERANCE,
                 cartesian=cartesian,
-                cartesian_max_step=self.cartesian_max_step,
+                cartesian_max_step=self.CARTESIAN_MAX_STEP,
             )
             success = bool(self._moveit.wait_until_executed())
         except Exception as exc:
@@ -221,7 +205,7 @@ class PickMoveItExecutorNode(Node):
             "grasp",
             self.latest_grasp_pose,
             self.latest_grasp_received_ns,
-            cartesian=self.cartesian_grasp,
+            cartesian=self.CARTESIAN_GRASP,
         )
         return response
 
@@ -242,7 +226,7 @@ class PickMoveItExecutorNode(Node):
             "grasp",
             self.latest_grasp_pose,
             self.latest_grasp_received_ns,
-            cartesian=self.cartesian_grasp,
+            cartesian=self.CARTESIAN_GRASP,
         )
         response.success = ok
         response.message = message

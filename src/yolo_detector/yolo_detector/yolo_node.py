@@ -18,10 +18,6 @@ from vision_msgs.msg import (
 )
 
 
-def _stamp_to_nanoseconds(stamp) -> int:
-    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
-
-
 class YoloNode(Node):
     def __init__(self):
         super().__init__("yolo_node")
@@ -30,15 +26,11 @@ class YoloNode(Node):
         self.declare_parameter("model", "models/pick_place_best.pt")
         self.declare_parameter("conf", 0.65)
         self.declare_parameter("device", "cpu")
-        self.declare_parameter("max_input_stamp_age_sec", 2.0)
 
         image_topic = str(self.get_parameter("image_topic").value)
         model_path = str(self.get_parameter("model").value)
         self.conf = float(self.get_parameter("conf").value)
         self.device = str(self.get_parameter("device").value)
-        self.max_input_stamp_age_sec = float(
-            self.get_parameter("max_input_stamp_age_sec").value
-        )
 
         if not Path(model_path).exists():
             self.get_logger().warn(
@@ -54,8 +46,6 @@ class YoloNode(Node):
         self.pub = self.create_publisher(Detection2DArray, "/yolo/detections", 10)
         self.pub_img = self.create_publisher(ImageMsg, "/yolo/image_annotated", 10)
 
-        self._last_stamp_warn_ns = 0
-
         self.get_logger().info(
             f"YOLO model={model_path}, conf={self.conf}, device={self.device}"
         )
@@ -63,28 +53,7 @@ class YoloNode(Node):
         self.get_logger().info("Publishing detections on: /yolo/detections")
         self.get_logger().info("Publishing annotated image on: /yolo/image_annotated")
 
-    def _is_stamp_stale(self, stamp) -> bool:
-        stamp_ns = _stamp_to_nanoseconds(stamp)
-        if stamp_ns <= 0:
-            return True
-        now_ns = self.get_clock().now().nanoseconds
-        max_age_ns = int(self.max_input_stamp_age_sec * 1e9)
-        return abs(now_ns - stamp_ns) > max_age_ns
-
-    def _warn_stale_stamp_once(self, stamp) -> None:
-        now_ns = self.get_clock().now().nanoseconds
-        if now_ns - self._last_stamp_warn_ns > 1_000_000_000:
-            self._last_stamp_warn_ns = now_ns
-            age_sec = (now_ns - _stamp_to_nanoseconds(stamp)) / 1e9
-            self.get_logger().warn(
-                f"Incoming image timestamp is stale by {age_sec:.3f}s; "
-                "publishing detections and annotated image with current node time."
-            )
-
     def cb(self, msg: Image):
-        if self._is_stamp_stale(msg.header.stamp):
-            self._warn_stale_stamp_once(msg.header.stamp)
-
         output_stamp = self.get_clock().now().to_msg()
         frame_id = str(msg.header.frame_id)
 

@@ -41,11 +41,6 @@ class Detection3DNode(Node):
         self.declare_parameter("roi_half_size", 2)
         self.declare_parameter("min_depth_m", 0.10)
         self.declare_parameter("max_depth_m", 2.00)
-        self.declare_parameter("enable_temporal_filter", False)
-        self.declare_parameter("smoothing_alpha", 0.4)
-        self.declare_parameter("max_jump_m", 0.08)
-        self.declare_parameter("sync_queue_size", 10)
-        self.declare_parameter("sync_slop", 0.10)
         self.declare_parameter("max_depth_age_sec", 0.75)
 
         detection_topic = str(self.get_parameter("detection_topic").value)
@@ -59,11 +54,6 @@ class Detection3DNode(Node):
         self.roi_half_size = int(self.get_parameter("roi_half_size").value)
         self.min_depth_m = float(self.get_parameter("min_depth_m").value)
         self.max_depth_m = float(self.get_parameter("max_depth_m").value)
-        self.enable_temporal_filter = bool(
-            self.get_parameter("enable_temporal_filter").value
-        )
-        self.smoothing_alpha = float(self.get_parameter("smoothing_alpha").value)
-        self.max_jump_m = float(self.get_parameter("max_jump_m").value)
         self.max_depth_age_sec = float(self.get_parameter("max_depth_age_sec").value)
 
         self.bridge = CvBridge()
@@ -76,7 +66,6 @@ class Detection3DNode(Node):
         self.camera_width = None
         self.camera_height = None
         self.camera_frame_id = ""
-        self.track_state = {}
         self.latest_depth_msg = None
         self.latest_depth_received_ns = None
         self._last_depth_warn_ns = 0
@@ -140,7 +129,9 @@ class Detection3DNode(Node):
             self._warn_depth_unavailable()
             return
 
-        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
+        depth_image = self.bridge.imgmsg_to_cv2(
+            depth_msg, desired_encoding="passthrough"
+        )
         height, width = depth_image.shape[:2]
 
         scale_u = 1.0
@@ -179,12 +170,6 @@ class Detection3DNode(Node):
 
             x = (u - self.cx) * z / self.fx
             y = (v - self.cy) * z / self.fy
-            label = (
-                det.results[0].hypothesis.class_id
-                if det.results
-                else f"unknown_{converted}"
-            )
-            x, y, z = self.apply_temporal_filter(label, x, y, z)
 
             det3d = Detection3D()
             det3d.header = out.header
@@ -228,37 +213,10 @@ class Detection3DNode(Node):
                 f"No depth frame received yet on {self.depth_topic}; skipping 3D localization."
             )
             return
-        age_sec = (
-            now_ns - self.latest_depth_received_ns
-        ) / 1_000_000_000.0
+        age_sec = (now_ns - self.latest_depth_received_ns) / 1_000_000_000.0
         self.get_logger().warn(
             f"Latest depth frame is stale ({age_sec:.2f}s old); skipping 3D localization."
         )
-
-    def apply_temporal_filter(
-        self, label: str, x: float, y: float, z: float
-    ) -> tuple[float, float, float]:
-        if not self.enable_temporal_filter:
-            return x, y, z
-
-        prev = self.track_state.get(label)
-        if prev is None:
-            self.track_state[label] = (x, y, z)
-            return x, y, z
-
-        dx = x - prev[0]
-        dy = y - prev[1]
-        dz = z - prev[2]
-        if np.sqrt(dx * dx + dy * dy + dz * dz) > self.max_jump_m:
-            self.track_state[label] = (x, y, z)
-            return x, y, z
-
-        alpha = min(max(self.smoothing_alpha, 0.0), 1.0)
-        xf = alpha * x + (1.0 - alpha) * prev[0]
-        yf = alpha * y + (1.0 - alpha) * prev[1]
-        zf = alpha * z + (1.0 - alpha) * prev[2]
-        self.track_state[label] = (xf, yf, zf)
-        return xf, yf, zf
 
     def depth_patch_to_meters(self, patch: np.ndarray, encoding: str) -> np.ndarray:
         if patch.size == 0:

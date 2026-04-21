@@ -17,18 +17,10 @@ def generate_launch_description():
     package_share = Path(get_package_share_directory("ur3e_description"))
     semantic_robot_name = "ur3e_cell"
 
-    custom_urdf_path = str(
-        package_share / "urdf" / "ur3e_cell.urdf.xacro"
-    )
-    custom_srdf_path = str(
-        package_share / "srdf" / "ur3e_cell.srdf.xacro"
-    )
-    trac_ik_kinematics_path = str(
-        package_share / "config" / "trac_ik_kinematics.yaml"
-    )
-    custom_joint_limits_path = str(
-        package_share / "config" / "joint_limits.yaml"
-    )
+    custom_urdf_path = str(package_share / "urdf" / "ur3e_cell.urdf.xacro")
+    custom_srdf_path = str(package_share / "srdf" / "ur3e_cell.srdf.xacro")
+    trac_ik_kinematics_path = str(package_share / "config" / "trac_ik_kinematics.yaml")
+    custom_joint_limits_path = str(package_share / "config" / "joint_limits.yaml")
 
     moveit_config = (
         MoveItConfigsBuilder(robot_name="ur", package_name="ur_moveit_config")
@@ -94,7 +86,9 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?"),
+            DeclareLaunchArgument(
+                "launch_rviz", default_value="true", description="Launch RViz?"
+            ),
             move_group_node,
             rviz_node,
         ]
