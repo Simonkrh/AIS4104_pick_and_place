@@ -44,6 +44,19 @@
     default="$(find ur_description)/config/initial_positions.yaml" />
 
   <link name="world" />
+  <link name="table">
+    <collision>
+      <geometry>
+        <box size="1.0 1.0 0.04" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="world-table" type="fixed">
+    <parent link="world" />
+    <child link="table" />
+    <origin xyz="0 0 -0.03" rpy="0 0 0" />
+  </joint>
 
   <xacro:ur_robot
     name="$(arg name)"
