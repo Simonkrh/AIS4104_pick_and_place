@@ -80,7 +80,31 @@ def generate_launch_description():
                 default_value=default_handeye_result_path,
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
-            DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.02"),
+            DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
+            DeclareLaunchArgument(
+                "pick_tool_yaw",
+                default_value="3.14159265359",
+                description=(
+                    "Fixed pick yaw in radians. pi flips the camera/gripper "
+                    "to face away from the robot instead of toward it."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "pick_approach_camera_offset_x",
+                default_value="0.0",
+                description=(
+                    "Camera X offset from gripper_tcp in meters, used only "
+                    "to shift the approach pose so the camera is above the target."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "pick_approach_camera_offset_y",
+                default_value="0.10",
+                description=(
+                    "Camera Y offset from gripper_tcp in meters, used only "
+                    "to shift the approach pose so the camera is above the target."
+                ),
+            ),
             DeclareLaunchArgument("robot_ip", default_value="192.168.0.100"),
             DeclareLaunchArgument(
                 "ready_joint_positions_deg",
@@ -148,6 +172,17 @@ def generate_launch_description():
                         )
                     },
                     {"grasp_offset_z": LaunchConfiguration("pick_grasp_offset_z")},
+                    {"tool_yaw": LaunchConfiguration("pick_tool_yaw")},
+                    {
+                        "approach_camera_offset_x": LaunchConfiguration(
+                            "pick_approach_camera_offset_x"
+                        )
+                    },
+                    {
+                        "approach_camera_offset_y": LaunchConfiguration(
+                            "pick_approach_camera_offset_y"
+                        )
+                    },
                 ],
             ),
             IncludeLaunchDescription(

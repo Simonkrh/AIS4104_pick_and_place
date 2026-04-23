@@ -41,8 +41,11 @@ class PickPoseGeneratorNode(Node):
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("approach_offset_z", 0.35)
-        self.declare_parameter("grasp_offset_z", 0.02)
+        self.declare_parameter("grasp_offset_z", -0.02)
         self.declare_parameter("tool_roll", math.pi)
+        self.declare_parameter("tool_yaw", math.pi)
+        self.declare_parameter("approach_camera_offset_x", 0.0)
+        self.declare_parameter("approach_camera_offset_y", 0.10)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.approach_topic = str(self.get_parameter("approach_topic").value)
@@ -50,8 +53,15 @@ class PickPoseGeneratorNode(Node):
         self.approach_offset_z = float(self.get_parameter("approach_offset_z").value)
         self.grasp_offset_z = float(self.get_parameter("grasp_offset_z").value)
         tool_roll = float(self.get_parameter("tool_roll").value)
+        tool_yaw = float(self.get_parameter("tool_yaw").value)
+        self.approach_camera_offset_x = float(
+            self.get_parameter("approach_camera_offset_x").value
+        )
+        self.approach_camera_offset_y = float(
+            self.get_parameter("approach_camera_offset_y").value
+        )
 
-        self.orientation_xyzw = _quaternion_from_rpy(tool_roll, 0.0, 0.0)
+        self.orientation_xyzw = _quaternion_from_rpy(tool_roll, 0.0, tool_yaw)
 
         self.approach_pub = self.create_publisher(PoseStamped, self.approach_topic, 10)
         self.grasp_pub = self.create_publisher(PoseStamped, self.grasp_topic, 10)
@@ -68,8 +78,18 @@ class PickPoseGeneratorNode(Node):
     def on_target(self, msg: PoseStamped):
         output_stamp = self.get_clock().now().to_msg()
 
-        approach_pose = self._make_pose(msg, self.approach_offset_z, output_stamp)
-        grasp_pose = self._make_pose(msg, self.grasp_offset_z, output_stamp)
+        approach_pose = self._make_pose(
+            msg,
+            self.approach_offset_z,
+            output_stamp,
+            compensate_camera_offset=True,
+        )
+        grasp_pose = self._make_pose(
+            msg,
+            self.grasp_offset_z,
+            output_stamp,
+            compensate_camera_offset=False,
+        )
 
         self.approach_pub.publish(approach_pose)
         self.grasp_pub.publish(grasp_pose)
@@ -82,7 +102,11 @@ class PickPoseGeneratorNode(Node):
         )
 
     def _make_pose(
-        self, source_pose: PoseStamped, z_offset: float, output_stamp
+        self,
+        source_pose: PoseStamped,
+        z_offset: float,
+        output_stamp,
+        compensate_camera_offset: bool,
     ) -> PoseStamped:
         pose = PoseStamped()
         pose.header.stamp = output_stamp
@@ -90,11 +114,38 @@ class PickPoseGeneratorNode(Node):
         pose.pose.position.x = float(source_pose.pose.position.x)
         pose.pose.position.y = float(source_pose.pose.position.y)
         pose.pose.position.z = float(source_pose.pose.position.z) + z_offset
+        if compensate_camera_offset:
+            offset_x, offset_y = self._rotate_xy_offset_to_pose_frame(
+                self.approach_camera_offset_x,
+                self.approach_camera_offset_y,
+            )
+            pose.pose.position.x -= offset_x
+            pose.pose.position.y -= offset_y
         pose.pose.orientation.x = float(self.orientation_xyzw[0])
         pose.pose.orientation.y = float(self.orientation_xyzw[1])
         pose.pose.orientation.z = float(self.orientation_xyzw[2])
         pose.pose.orientation.w = float(self.orientation_xyzw[3])
         return pose
+
+    def _rotate_xy_offset_to_pose_frame(
+        self, local_x: float, local_y: float
+    ) -> tuple[float, float]:
+        qx, qy, qz, qw = self.orientation_xyzw
+        xx = qx * qx
+        xy = qx * qy
+        yy = qy * qy
+        zz = qz * qz
+        zw = qz * qw
+
+        rot_xx = 1.0 - 2.0 * (yy + zz)
+        rot_xy = 2.0 * (xy - zw)
+        rot_yx = 2.0 * (xy + zw)
+        rot_yy = 1.0 - 2.0 * (xx + zz)
+
+        return (
+            rot_xx * local_x + rot_xy * local_y,
+            rot_yx * local_x + rot_yy * local_y,
+        )
 
     @staticmethod
     def _pose_to_transform(pose: PoseStamped, child_frame: str) -> TransformStamped:
