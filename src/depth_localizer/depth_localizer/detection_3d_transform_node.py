@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.time import Time
+from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
 
@@ -60,6 +61,7 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("min_score", 0.0)
         self.declare_parameter("best_pose_topic", "/pick_target_pose")
         self.declare_parameter("best_tf_child_frame", "detected_object")
+        self.declare_parameter("motion_active_topic", "/pick_motion_active")
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -78,6 +80,9 @@ class Detection3DTransformNode(Node):
         self.best_tf_child_frame = str(
             self.get_parameter("best_tf_child_frame").value
         ).strip()
+        self.motion_active_topic = str(
+            self.get_parameter("motion_active_topic").value
+        ).strip()
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -95,6 +100,10 @@ class Detection3DTransformNode(Node):
         self.sub = self.create_subscription(
             Detection3DArray, self.input_topic, self.on_detections, 10
         )
+        self.motion_active = False
+        self.motion_active_sub = self.create_subscription(
+            Bool, self.motion_active_topic, self._on_motion_active, 10
+        )
 
         self._last_tf_warn_ns = 0
         self._last_stamp_warn_ns = 0
@@ -111,6 +120,12 @@ class Detection3DTransformNode(Node):
                 f"Broadcasting TF for best detection: "
                 f"{self.target_frame} -> {self.best_tf_child_frame}"
             )
+        self.get_logger().info(
+            f"Subscribing motion active flag: {self.motion_active_topic}"
+        )
+
+    def _on_motion_active(self, msg: Bool) -> None:
+        self.motion_active = bool(msg.data)
 
     def _is_stamp_stale(self, stamp) -> bool:
         stamp_ns = _stamp_to_nanoseconds(stamp)
@@ -253,6 +268,9 @@ class Detection3DTransformNode(Node):
             out.detections.append(det_out)
 
         self.pub.publish(out)
+
+        if self.motion_active:
+            return
 
         best = self._select_best_detection(out)
         if best is None:

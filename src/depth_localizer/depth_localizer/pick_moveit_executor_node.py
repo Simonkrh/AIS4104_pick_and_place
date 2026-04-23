@@ -5,6 +5,7 @@ import ast
 import math
 import socket
 import time
+from contextlib import contextmanager
 from typing import Optional
 
 import rclpy
@@ -16,7 +17,7 @@ from pymoveit2.robots import ur
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 
@@ -45,6 +46,7 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("status_topic", "/pick_execution_status")
+        self.declare_parameter("motion_active_topic", "/pick_motion_active")
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -54,6 +56,9 @@ class PickMoveItExecutorNode(Node):
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
+        self.motion_active_topic = str(
+            self.get_parameter("motion_active_topic").value
+        )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
             self.get_parameter("ready_joint_positions_deg").value
@@ -64,11 +69,15 @@ class PickMoveItExecutorNode(Node):
 
         self.callback_group = ReentrantCallbackGroup()
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
+        self.motion_active_pub = self.create_publisher(
+            Bool, self.motion_active_topic, 10
+        )
 
         self.latest_approach_pose: Optional[PoseStamped] = None
         self.latest_grasp_pose: Optional[PoseStamped] = None
         self.latest_approach_received_ns: Optional[int] = None
         self.latest_grasp_received_ns: Optional[int] = None
+        self._motion_active_depth = 0
 
         self.create_subscription(
             PoseStamped,
@@ -155,6 +164,9 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(f"Subscribing grasp pose: {self.grasp_topic}")
         self.get_logger().info(f"Publishing execution status: {self.status_topic}")
         self.get_logger().info(
+            f"Publishing motion active flag: {self.motion_active_topic}"
+        )
+        self.get_logger().info(
             "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick, "
             "~/move_to_ready_pose, ~/move_to_start_pose, "
             "~/open_gripper, ~/close_gripper"
@@ -194,10 +206,14 @@ class PickMoveItExecutorNode(Node):
         return joint_positions
 
     def _on_approach_pose(self, msg: PoseStamped) -> None:
+        if self._motion_active_depth > 0:
+            return
         self.latest_approach_pose = msg
         self.latest_approach_received_ns = self.get_clock().now().nanoseconds
 
     def _on_grasp_pose(self, msg: PoseStamped) -> None:
+        if self._motion_active_depth > 0:
+            return
         self.latest_grasp_pose = msg
         self.latest_grasp_received_ns = self.get_clock().now().nanoseconds
 
@@ -206,6 +222,23 @@ class PickMoveItExecutorNode(Node):
         msg.data = text
         self.status_pub.publish(msg)
         self.get_logger().info(text)
+
+    def _publish_motion_active(self, active: bool) -> None:
+        msg = Bool()
+        msg.data = bool(active)
+        self.motion_active_pub.publish(msg)
+
+    @contextmanager
+    def _motion_active_guard(self):
+        self._motion_active_depth += 1
+        if self._motion_active_depth == 1:
+            self._publish_motion_active(True)
+        try:
+            yield
+        finally:
+            self._motion_active_depth = max(self._motion_active_depth - 1, 0)
+            if self._motion_active_depth == 0:
+                self._publish_motion_active(False)
 
     def _moveit_ready(self) -> bool:
         ready = self._plan_client.service_is_ready()
@@ -262,12 +295,13 @@ class PickMoveItExecutorNode(Node):
         self._publish_status(f"Planning {label} joint move: {joints_summary}")
 
         try:
-            self._moveit.move_to_configuration(
-                joint_positions=joint_positions_rad,
-                joint_names=joint_names,
-                tolerance=self.JOINT_TOLERANCE,
-            )
-            success = self._wait_for_motion_completion(label)
+            with self._motion_active_guard():
+                self._moveit.move_to_configuration(
+                    joint_positions=joint_positions_rad,
+                    joint_names=joint_names,
+                    tolerance=self.JOINT_TOLERANCE,
+                )
+                success = self._wait_for_motion_completion(label)
         except Exception as exc:
             return False, f"MoveIt failed during {label}: {exc}"
 
@@ -330,15 +364,16 @@ end
         )
 
         try:
-            self._moveit.move_to_pose(
-                pose=pose,
-                target_link=self.TARGET_LINK,
-                tolerance_position=self.POSITION_TOLERANCE,
-                tolerance_orientation=self.ORIENTATION_TOLERANCE,
-                cartesian=cartesian,
-                cartesian_max_step=self.CARTESIAN_MAX_STEP,
-            )
-            success = self._wait_for_motion_completion(label)
+            with self._motion_active_guard():
+                self._moveit.move_to_pose(
+                    pose=pose,
+                    target_link=self.TARGET_LINK,
+                    tolerance_position=self.POSITION_TOLERANCE,
+                    tolerance_orientation=self.ORIENTATION_TOLERANCE,
+                    cartesian=cartesian,
+                    cartesian_max_step=self.CARTESIAN_MAX_STEP,
+                )
+                success = self._wait_for_motion_completion(label)
         except Exception as exc:
             return False, f"MoveIt failed during {label}: {exc}"
 
@@ -369,35 +404,36 @@ end
 
     def _handle_execute_pick(self, request, response):
         del request
-        ok, message = self._send_gripper_command("open")
-        if not ok:
-            response.success = False
-            response.message = message
-            return response
+        with self._motion_active_guard():
+            ok, message = self._send_gripper_command("open")
+            if not ok:
+                response.success = False
+                response.message = message
+                return response
 
-        ok, message = self._execute_pose(
-            "approach",
-            self.latest_approach_pose,
-            self.latest_approach_received_ns,
-            cartesian=False,
-        )
-        if not ok:
-            response.success = False
-            response.message = message
-            return response
+            ok, message = self._execute_pose(
+                "approach",
+                self.latest_approach_pose,
+                self.latest_approach_received_ns,
+                cartesian=False,
+            )
+            if not ok:
+                response.success = False
+                response.message = message
+                return response
 
-        ok, message = self._execute_pose(
-            "grasp",
-            self.latest_grasp_pose,
-            self.latest_grasp_received_ns,
-            cartesian=self.CARTESIAN_GRASP,
-        )
-        if not ok:
-            response.success = False
-            response.message = message
-            return response
+            ok, message = self._execute_pose(
+                "grasp",
+                self.latest_grasp_pose,
+                self.latest_grasp_received_ns,
+                cartesian=self.CARTESIAN_GRASP,
+            )
+            if not ok:
+                response.success = False
+                response.message = message
+                return response
 
-        ok, message = self._send_gripper_command("close")
+            ok, message = self._send_gripper_command("close")
         response.success = ok
         response.message = message
         return response
