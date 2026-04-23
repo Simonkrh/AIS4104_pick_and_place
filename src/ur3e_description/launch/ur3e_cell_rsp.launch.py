@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.substitutions import Command, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -7,6 +8,21 @@ from launch.substitutions import FindExecutable
 
 
 def generate_launch_description():
+    robot_ip = LaunchConfiguration("robot_ip")
+    script_filename = PathJoinSubstitution(
+        [
+            FindPackageShare("ur_client_library"),
+            "resources",
+            "external_control.urscript",
+        ]
+    )
+    input_recipe_filename = PathJoinSubstitution(
+        [FindPackageShare("ur_robot_driver"), "resources", "rtde_input_recipe.txt"]
+    )
+    output_recipe_filename = PathJoinSubstitution(
+        [FindPackageShare("ur_robot_driver"), "resources", "rtde_output_recipe.txt"]
+    )
+
     robot_description_content = Command(
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
@@ -14,6 +30,18 @@ def generate_launch_description():
             PathJoinSubstitution(
                 [FindPackageShare("ur3e_description"), "urdf", "ur3e_cell.urdf.xacro"]
             ),
+            " ",
+            "robot_ip:=",
+            robot_ip,
+            " ",
+            "script_filename:=",
+            script_filename,
+            " ",
+            "input_recipe_filename:=",
+            input_recipe_filename,
+            " ",
+            "output_recipe_filename:=",
+            output_recipe_filename,
         ]
     )
 
@@ -31,4 +59,9 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([robot_state_publisher])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("robot_ip", default_value="192.168.0.100"),
+            robot_state_publisher,
+        ]
+    )

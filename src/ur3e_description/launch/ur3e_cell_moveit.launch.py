@@ -18,6 +18,7 @@ def generate_launch_description():
     launch_rviz = LaunchConfiguration("launch_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
     launch_robot_state_publisher = LaunchConfiguration("launch_robot_state_publisher")
+    robot_ip = LaunchConfiguration("robot_ip")
     package_share = Path(get_package_share_directory("ur3e_description"))
     semantic_robot_name = "ur3e_cell"
 
@@ -96,6 +97,7 @@ def generate_launch_description():
             ]
         ),
         condition=IfCondition(launch_robot_state_publisher),
+        launch_arguments={"robot_ip": robot_ip}.items(),
     )
 
     return LaunchDescription(
@@ -109,6 +111,7 @@ def generate_launch_description():
                 "launch_robot_state_publisher",
                 default_value="true",
             ),
+            DeclareLaunchArgument("robot_ip", default_value="192.168.0.100"),
             robot_state_publisher_launch,
             move_group_node,
             rviz_node,
