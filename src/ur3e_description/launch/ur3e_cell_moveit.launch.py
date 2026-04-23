@@ -16,6 +16,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 def generate_launch_description():
     launch_rviz = LaunchConfiguration("launch_rviz")
+    rviz_config = LaunchConfiguration("rviz_config")
     launch_robot_state_publisher = LaunchConfiguration("launch_robot_state_publisher")
     package_share = Path(get_package_share_directory("ur3e_description"))
     semantic_robot_name = "ur3e_cell"
@@ -64,7 +65,7 @@ def generate_launch_description():
         ],
     )
 
-    rviz_config_file = PathJoinSubstitution(
+    default_rviz_config_file = PathJoinSubstitution(
         [FindPackageShare("ur_moveit_config"), "config", "moveit.rviz"]
     )
     rviz_node = Node(
@@ -73,7 +74,7 @@ def generate_launch_description():
         executable="rviz2",
         name="rviz2_moveit",
         output="log",
-        arguments=["-d", rviz_config_file],
+        arguments=["-d", rviz_config],
         parameters=[
             moveit_config.robot_description,
             moveit_config.robot_description_semantic,
@@ -99,8 +100,10 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument("launch_rviz", default_value="true"),
             DeclareLaunchArgument(
-                "launch_rviz", default_value="true", description="Launch RViz?"
+                "rviz_config",
+                default_value=default_rviz_config_file,
             ),
             DeclareLaunchArgument(
                 "launch_robot_state_publisher",

@@ -56,6 +56,13 @@ def generate_launch_description():
             DeclareLaunchArgument("launch_moveit", default_value="true"),
             DeclareLaunchArgument("moveit_launch_rviz", default_value="true"),
             DeclareLaunchArgument(
+                "rviz_config",
+                default_value=[
+                    FindPackageShare("ur_moveit_config"),
+                    "/config/moveit.rviz",
+                ],
+            ),
+            DeclareLaunchArgument(
                 "image_topic", default_value="/realsense_cam/color/image_raw"
             ),
             DeclareLaunchArgument(
@@ -152,7 +159,8 @@ def generate_launch_description():
                 ),
                 condition=IfCondition(LaunchConfiguration("launch_moveit")),
                 launch_arguments={
-                    "launch_rviz": LaunchConfiguration("moveit_launch_rviz")
+                    "launch_rviz": LaunchConfiguration("moveit_launch_rviz"),
+                    "rviz_config": LaunchConfiguration("rviz_config"),
                 }.items(),
             ),
             Node(
