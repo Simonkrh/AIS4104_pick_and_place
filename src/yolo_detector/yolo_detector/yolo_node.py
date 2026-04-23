@@ -54,7 +54,7 @@ class YoloNode(Node):
         self.get_logger().info("Publishing annotated image on: /yolo/image_annotated")
 
     def cb(self, msg: Image):
-        output_stamp = self.get_clock().now().to_msg()
+        output_stamp = msg.header.stamp
         frame_id = str(msg.header.frame_id)
 
         cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
