@@ -47,6 +47,7 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("status_topic", "/pick_execution_status")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
+        self.declare_parameter("approach_to_grasp_wait_sec", 1.0)
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -58,6 +59,9 @@ class PickMoveItExecutorNode(Node):
         self.status_topic = str(self.get_parameter("status_topic").value)
         self.motion_active_topic = str(
             self.get_parameter("motion_active_topic").value
+        )
+        self.approach_to_grasp_wait_sec = max(
+            float(self.get_parameter("approach_to_grasp_wait_sec").value), 0.0
         )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
@@ -176,6 +180,9 @@ class PickMoveItExecutorNode(Node):
         )
         self.get_logger().info(
             f"Ready pose joint targets (deg): {self.ready_joint_positions_deg}"
+        )
+        self.get_logger().info(
+            f"Approach-to-grasp wait: {self.approach_to_grasp_wait_sec:.2f} s"
         )
         self.get_logger().info(f"Gripper URScript target: {self.robot_ip}:30002")
 
@@ -404,36 +411,41 @@ end
 
     def _handle_execute_pick(self, request, response):
         del request
-        with self._motion_active_guard():
-            ok, message = self._send_gripper_command("open")
-            if not ok:
-                response.success = False
-                response.message = message
-                return response
+        ok, message = self._send_gripper_command("open")
+        if not ok:
+            response.success = False
+            response.message = message
+            return response
 
-            ok, message = self._execute_pose(
-                "approach",
-                self.latest_approach_pose,
-                self.latest_approach_received_ns,
-                cartesian=False,
+        ok, message = self._execute_pose(
+            "approach",
+            self.latest_approach_pose,
+            self.latest_approach_received_ns,
+            cartesian=False,
+        )
+        if not ok:
+            response.success = False
+            response.message = message
+            return response
+
+        if self.approach_to_grasp_wait_sec > 0.0:
+            self._publish_status(
+                f"Waiting {self.approach_to_grasp_wait_sec:.2f}s to reacquire target before grasp."
             )
-            if not ok:
-                response.success = False
-                response.message = message
-                return response
+            time.sleep(self.approach_to_grasp_wait_sec)
 
-            ok, message = self._execute_pose(
-                "grasp",
-                self.latest_grasp_pose,
-                self.latest_grasp_received_ns,
-                cartesian=self.CARTESIAN_GRASP,
-            )
-            if not ok:
-                response.success = False
-                response.message = message
-                return response
+        ok, message = self._execute_pose(
+            "grasp",
+            self.latest_grasp_pose,
+            self.latest_grasp_received_ns,
+            cartesian=self.CARTESIAN_GRASP,
+        )
+        if not ok:
+            response.success = False
+            response.message = message
+            return response
 
-            ok, message = self._send_gripper_command("close")
+        ok, message = self._send_gripper_command("close")
         response.success = ok
         response.message = message
         return response

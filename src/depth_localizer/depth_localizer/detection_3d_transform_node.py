@@ -62,6 +62,8 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("best_pose_topic", "/pick_target_pose")
         self.declare_parameter("best_tf_child_frame", "detected_object")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
+        self.declare_parameter("best_pose_jump_rejection_distance", 0.01)
+        self.declare_parameter("best_pose_jump_rejection_hold_sec", 0.5)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -83,6 +85,12 @@ class Detection3DTransformNode(Node):
         self.motion_active_topic = str(
             self.get_parameter("motion_active_topic").value
         ).strip()
+        self.best_pose_jump_rejection_distance = max(
+            float(self.get_parameter("best_pose_jump_rejection_distance").value), 0.0
+        )
+        self.best_pose_jump_rejection_hold_sec = max(
+            float(self.get_parameter("best_pose_jump_rejection_hold_sec").value), 0.0
+        )
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -107,6 +115,9 @@ class Detection3DTransformNode(Node):
 
         self._last_tf_warn_ns = 0
         self._last_stamp_warn_ns = 0
+        self._accepted_best_position: Optional[tuple[float, float, float]] = None
+        self._pending_best_position: Optional[tuple[float, float, float]] = None
+        self._pending_best_since_ns: Optional[int] = None
 
         self.get_logger().info(f"Subscribing detections: {self.input_topic}")
         self.get_logger().info(
@@ -123,9 +134,71 @@ class Detection3DTransformNode(Node):
         self.get_logger().info(
             f"Subscribing motion active flag: {self.motion_active_topic}"
         )
+        self.get_logger().info(
+            "Best pose jump rejection: "
+            f"distance={self.best_pose_jump_rejection_distance:.3f} m, "
+            f"hold={self.best_pose_jump_rejection_hold_sec:.2f} s"
+        )
 
     def _on_motion_active(self, msg: Bool) -> None:
         self.motion_active = bool(msg.data)
+
+    @staticmethod
+    def _distance_between_points(
+        a: tuple[float, float, float], b: tuple[float, float, float]
+    ) -> float:
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        dz = a[2] - b[2]
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    def _stabilize_best_position(
+        self, position: tuple[float, float, float]
+    ) -> tuple[float, float, float]:
+        if self._accepted_best_position is None:
+            self._accepted_best_position = position
+            self._pending_best_position = None
+            self._pending_best_since_ns = None
+            return position
+
+        if (
+            self._distance_between_points(position, self._accepted_best_position)
+            <= self.best_pose_jump_rejection_distance
+        ):
+            self._pending_best_position = None
+            self._pending_best_since_ns = None
+            self._accepted_best_position = position
+            return position
+
+        if self.best_pose_jump_rejection_hold_sec <= 0.0:
+            self._accepted_best_position = position
+            self._pending_best_position = None
+            self._pending_best_since_ns = None
+            return position
+
+        now_ns = self.get_clock().now().nanoseconds
+
+        if (
+            self._pending_best_position is None
+            or self._distance_between_points(position, self._pending_best_position)
+            > self.best_pose_jump_rejection_distance
+        ):
+            self._pending_best_position = position
+            self._pending_best_since_ns = now_ns
+            return self._accepted_best_position
+
+        if self._pending_best_since_ns is None:
+            self._pending_best_since_ns = now_ns
+            return self._accepted_best_position
+
+        hold_ns = int(self.best_pose_jump_rejection_hold_sec * 1e9)
+        if now_ns - self._pending_best_since_ns < hold_ns:
+            return self._accepted_best_position
+
+        self._accepted_best_position = position
+        self._pending_best_position = None
+        self._pending_best_since_ns = None
+        return position
 
     def _is_stamp_stale(self, stamp) -> bool:
         stamp_ns = _stamp_to_nanoseconds(stamp)
@@ -276,28 +349,33 @@ class Detection3DTransformNode(Node):
         if best is None:
             return
 
+        best_z = float(best.bbox.center.position.z) + max(
+            0.5 * float(best.bbox.size.z), 0.0
+        )
+        best_position = (
+            float(best.bbox.center.position.x),
+            float(best.bbox.center.position.y),
+            best_z,
+        )
+        best_x, best_y, best_z = self._stabilize_best_position(best_position)
+
         if self.best_pose_pub is not None:
-            best_z = float(best.bbox.center.position.z) + max(
-                0.5 * float(best.bbox.size.z), 0.0
-            )
             pose = PoseStamped()
             pose.header.stamp = publish_stamp
             pose.header.frame_id = out.header.frame_id
-            pose.pose.position = best.bbox.center.position
+            pose.pose.position.x = best_x
+            pose.pose.position.y = best_y
             pose.pose.position.z = best_z
             pose.pose.orientation.w = 1.0
             self.best_pose_pub.publish(pose)
 
         if self.tf_broadcaster is not None:
-            best_z = float(best.bbox.center.position.z) + max(
-                0.5 * float(best.bbox.size.z), 0.0
-            )
             tf_msg = TransformStamped()
             tf_msg.header.stamp = publish_stamp
             tf_msg.header.frame_id = out.header.frame_id
             tf_msg.child_frame_id = self.best_tf_child_frame
-            tf_msg.transform.translation.x = float(best.bbox.center.position.x)
-            tf_msg.transform.translation.y = float(best.bbox.center.position.y)
+            tf_msg.transform.translation.x = best_x
+            tf_msg.transform.translation.y = best_y
             tf_msg.transform.translation.z = best_z
             tf_msg.transform.rotation.w = 1.0
             self.tf_broadcaster.sendTransform(tf_msg)
