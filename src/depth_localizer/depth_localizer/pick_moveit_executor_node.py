@@ -48,6 +48,11 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("status_topic", "/pick_execution_status")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
         self.declare_parameter("approach_to_grasp_wait_sec", 1.0)
+        self.declare_parameter("approach_fallback_enabled", True)
+        self.declare_parameter("approach_fallback_xy_step", 0.02)
+        self.declare_parameter("approach_fallback_xy_levels", 2)
+        self.declare_parameter("approach_fallback_z_step", 0.01)
+        self.declare_parameter("approach_fallback_z_levels", 2)
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -62,6 +67,21 @@ class PickMoveItExecutorNode(Node):
         )
         self.approach_to_grasp_wait_sec = max(
             float(self.get_parameter("approach_to_grasp_wait_sec").value), 0.0
+        )
+        self.approach_fallback_enabled = bool(
+            self.get_parameter("approach_fallback_enabled").value
+        )
+        self.approach_fallback_xy_step = max(
+            float(self.get_parameter("approach_fallback_xy_step").value), 0.0
+        )
+        self.approach_fallback_xy_levels = max(
+            int(self.get_parameter("approach_fallback_xy_levels").value), 0
+        )
+        self.approach_fallback_z_step = max(
+            float(self.get_parameter("approach_fallback_z_step").value), 0.0
+        )
+        self.approach_fallback_z_levels = max(
+            int(self.get_parameter("approach_fallback_z_levels").value), 0
         )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
@@ -183,6 +203,14 @@ class PickMoveItExecutorNode(Node):
         )
         self.get_logger().info(
             f"Approach-to-grasp wait: {self.approach_to_grasp_wait_sec:.2f} s"
+        )
+        self.get_logger().info(
+            "Approach fallback search: "
+            f"enabled={self.approach_fallback_enabled}, "
+            f"xy_step={self.approach_fallback_xy_step:.3f} m, "
+            f"xy_levels={self.approach_fallback_xy_levels}, "
+            f"z_step={self.approach_fallback_z_step:.3f} m, "
+            f"z_levels={self.approach_fallback_z_levels}"
         )
         self.get_logger().info(f"Gripper URScript target: {self.robot_ip}:30002")
 
@@ -364,30 +392,116 @@ end
                 f"{label.capitalize()} pose is stale; reacquire the target first.",
             )
 
-        self._publish_status(
-            f"Planning {label} move to "
-            f"({pose.pose.position.x:.3f}, {pose.pose.position.y:.3f}, {pose.pose.position.z:.3f}) "
-            f"in {pose.header.frame_id}"
+        candidates = (
+            self._build_approach_candidates(pose)
+            if label == "approach" and not cartesian
+            else [(0.0, 0.0, 0.0, pose)]
         )
+
+        last_failure_message = f"{label.capitalize()} move failed."
 
         try:
             with self._motion_active_guard():
-                self._moveit.move_to_pose(
-                    pose=pose,
-                    target_link=self.TARGET_LINK,
-                    tolerance_position=self.POSITION_TOLERANCE,
-                    tolerance_orientation=self.ORIENTATION_TOLERANCE,
-                    cartesian=cartesian,
-                    cartesian_max_step=self.CARTESIAN_MAX_STEP,
-                )
-                success = self._wait_for_motion_completion(label)
+                for dx, dy, dz, candidate_pose in candidates:
+                    candidate_label = self._format_pose_candidate_label(dx, dy, dz)
+                    self._publish_status(
+                        f"Planning {label} move{candidate_label} to "
+                        f"({candidate_pose.pose.position.x:.3f}, "
+                        f"{candidate_pose.pose.position.y:.3f}, "
+                        f"{candidate_pose.pose.position.z:.3f}) "
+                        f"in {candidate_pose.header.frame_id}"
+                    )
+                    self._moveit.move_to_pose(
+                        pose=candidate_pose,
+                        target_link=self.TARGET_LINK,
+                        tolerance_position=self.POSITION_TOLERANCE,
+                        tolerance_orientation=self.ORIENTATION_TOLERANCE,
+                        cartesian=cartesian,
+                        cartesian_max_step=self.CARTESIAN_MAX_STEP,
+                    )
+                    success = self._wait_for_motion_completion(label)
+                    if success:
+                        if dx == 0.0 and dy == 0.0 and dz == 0.0:
+                            self._publish_status(f"{label.capitalize()} move completed.")
+                            return True, f"{label.capitalize()} move completed."
+                        self._publish_status(
+                            f"{label.capitalize()} move completed using nearby fallback "
+                            f"(dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})."
+                        )
+                        return (
+                            True,
+                            f"{label.capitalize()} move completed using nearby fallback.",
+                        )
+
+                    last_failure_message = (
+                        f"{label.capitalize()} move failed{candidate_label}."
+                    )
         except Exception as exc:
             return False, f"MoveIt failed during {label}: {exc}"
 
-        if success:
-            self._publish_status(f"{label.capitalize()} move completed.")
-            return True, f"{label.capitalize()} move completed."
-        return False, f"{label.capitalize()} move failed."
+        return False, last_failure_message
+
+    @staticmethod
+    def _clone_pose(pose: PoseStamped) -> PoseStamped:
+        pose_copy = PoseStamped()
+        pose_copy.header.stamp = pose.header.stamp
+        pose_copy.header.frame_id = pose.header.frame_id
+        pose_copy.pose.position.x = float(pose.pose.position.x)
+        pose_copy.pose.position.y = float(pose.pose.position.y)
+        pose_copy.pose.position.z = float(pose.pose.position.z)
+        pose_copy.pose.orientation.x = float(pose.pose.orientation.x)
+        pose_copy.pose.orientation.y = float(pose.pose.orientation.y)
+        pose_copy.pose.orientation.z = float(pose.pose.orientation.z)
+        pose_copy.pose.orientation.w = float(pose.pose.orientation.w)
+        return pose_copy
+
+    @staticmethod
+    def _format_pose_candidate_label(dx: float, dy: float, dz: float) -> str:
+        if dx == 0.0 and dy == 0.0 and dz == 0.0:
+            return ""
+        return f" (fallback dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})"
+
+    def _build_approach_candidates(
+        self, pose: PoseStamped
+    ) -> list[tuple[float, float, float, PoseStamped]]:
+        offsets: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)]
+        if not self.approach_fallback_enabled:
+            return [(0.0, 0.0, 0.0, self._clone_pose(pose))]
+
+        seen_offsets = {(0.0, 0.0, 0.0)}
+        for z_level in range(self.approach_fallback_z_levels + 1):
+            dz = round(z_level * self.approach_fallback_z_step, 6)
+            if dz > 0.0 and (0.0, 0.0, dz) not in seen_offsets:
+                offsets.append((0.0, 0.0, dz))
+                seen_offsets.add((0.0, 0.0, dz))
+
+            for xy_level in range(1, self.approach_fallback_xy_levels + 1):
+                step = round(xy_level * self.approach_fallback_xy_step, 6)
+                ring_offsets = [
+                    (step, 0.0, dz),
+                    (-step, 0.0, dz),
+                    (0.0, step, dz),
+                    (0.0, -step, dz),
+                    (step, step, dz),
+                    (step, -step, dz),
+                    (-step, step, dz),
+                    (-step, -step, dz),
+                ]
+                for offset in ring_offsets:
+                    if offset in seen_offsets:
+                        continue
+                    offsets.append(offset)
+                    seen_offsets.add(offset)
+
+        candidates: list[tuple[float, float, float, PoseStamped]] = []
+        for dx, dy, dz in offsets:
+            candidate_pose = self._clone_pose(pose)
+            candidate_pose.pose.position.x += dx
+            candidate_pose.pose.position.y += dy
+            candidate_pose.pose.position.z += dz
+            candidates.append((dx, dy, dz, candidate_pose))
+
+        return candidates
 
     def _handle_execute_approach(self, request, response):
         del request

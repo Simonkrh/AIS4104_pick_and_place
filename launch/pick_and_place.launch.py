@@ -81,6 +81,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
+            DeclareLaunchArgument("pick_approach_fallback_enabled", default_value="true"),
+            DeclareLaunchArgument("pick_approach_fallback_xy_step", default_value="0.02"),
+            DeclareLaunchArgument("pick_approach_fallback_xy_levels", default_value="2"),
+            DeclareLaunchArgument("pick_approach_fallback_z_step", default_value="0.01"),
+            DeclareLaunchArgument("pick_approach_fallback_z_levels", default_value="2"),
             DeclareLaunchArgument("pick_table_top_z", default_value="-0.01"),
             DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.005"),
             DeclareLaunchArgument(
@@ -218,6 +223,31 @@ def generate_launch_description():
                         )
                     },
                     {"robot_ip": LaunchConfiguration("robot_ip")},
+                    {
+                        "approach_fallback_enabled": LaunchConfiguration(
+                            "pick_approach_fallback_enabled"
+                        )
+                    },
+                    {
+                        "approach_fallback_xy_step": LaunchConfiguration(
+                            "pick_approach_fallback_xy_step"
+                        )
+                    },
+                    {
+                        "approach_fallback_xy_levels": LaunchConfiguration(
+                            "pick_approach_fallback_xy_levels"
+                        )
+                    },
+                    {
+                        "approach_fallback_z_step": LaunchConfiguration(
+                            "pick_approach_fallback_z_step"
+                        )
+                    },
+                    {
+                        "approach_fallback_z_levels": LaunchConfiguration(
+                            "pick_approach_fallback_z_levels"
+                        )
+                    },
                 ],
             ),
         ]
