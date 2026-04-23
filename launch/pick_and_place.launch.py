@@ -74,6 +74,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.02"),
+            DeclareLaunchArgument("robot_ip", default_value="192.168.0.100"),
             DeclareLaunchArgument(
                 "ready_joint_positions_deg",
                 default_value="[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]",
@@ -164,7 +165,8 @@ def generate_launch_description():
                         "ready_joint_positions_deg": LaunchConfiguration(
                             "ready_joint_positions_deg"
                         )
-                    }
+                    },
+                    {"robot_ip": LaunchConfiguration("robot_ip")},
                 ],
             ),
         ]

@@ -96,6 +96,15 @@ The default launch now assumes the camera is remote:
 ros2 launch ./launch/pick_and_place.launch.py
 ```
 
+### Test the gripper manually
+
+The launch defaults to `robot_ip:=192.168.0.100`. If the robot IP changes, pass `robot_ip:=<ip>` when launching.
+
+```bash
+ros2 service call /pick_moveit_executor_node/open_gripper std_srvs/srv/Trigger {}
+ros2 service call /pick_moveit_executor_node/close_gripper std_srvs/srv/Trigger {}
+```
+
 ## Common Launch Modes
 
 ### Use a specific model

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import math
+import socket
 import time
 from typing import Optional
 
@@ -33,6 +34,10 @@ class PickMoveItExecutorNode(Node):
     MOVEIT_WAIT_SECONDS = 5.0
     EXECUTION_TIMEOUT_SEC = 30.0
     EXECUTION_POLL_INTERVAL_SEC = 0.05
+    DEFAULT_ROBOT_IP = "192.168.0.100"
+    ROBOT_SCRIPT_PORT = 30002
+    ROBOT_SCRIPT_TIMEOUT_SEC = 2.0
+    GRIPPER_SETTLE_SEC = 1.0
 
     def __init__(self):
         super().__init__("pick_moveit_executor_node")
@@ -44,10 +49,12 @@ class PickMoveItExecutorNode(Node):
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
         )
+        self.declare_parameter("robot_ip", self.DEFAULT_ROBOT_IP)
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
+        self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
             self.get_parameter("ready_joint_positions_deg").value
         )
@@ -108,6 +115,18 @@ class PickMoveItExecutorNode(Node):
             self._handle_move_to_ready_pose,
             callback_group=self.callback_group,
         )
+        self.create_service(
+            Trigger,
+            "~/open_gripper",
+            self._handle_open_gripper,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
+            "~/close_gripper",
+            self._handle_close_gripper,
+            callback_group=self.callback_group,
+        )
 
         self._moveit = MoveIt2(
             node=self,
@@ -137,7 +156,8 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(f"Publishing execution status: {self.status_topic}")
         self.get_logger().info(
             "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick, "
-            "~/move_to_ready_pose, ~/move_to_start_pose"
+            "~/move_to_ready_pose, ~/move_to_start_pose, "
+            "~/open_gripper, ~/close_gripper"
         )
         self.get_logger().info(
             f"MoveIt group={self.GROUP_NAME}, base={self.BASE_LINK_NAME}, tool={self.TARGET_LINK}"
@@ -145,6 +165,7 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(
             f"Ready pose joint targets (deg): {self.ready_joint_positions_deg}"
         )
+        self.get_logger().info(f"Gripper URScript target: {self.robot_ip}:30002")
 
     def _parse_joint_positions_deg(self, value) -> list[float]:
         if isinstance(value, str):
@@ -255,6 +276,36 @@ class PickMoveItExecutorNode(Node):
             return True, f"{label.capitalize()} joint move completed."
         return False, f"{label.capitalize()} joint move failed."
 
+    def _send_gripper_command(self, label: str) -> tuple[bool, str]:
+        if label == "open":
+            width = 36.9
+            force = 80
+        elif label == "close":
+            width = 0.0
+            force = 31
+        else:
+            return False, f"Unknown gripper command: {label}"
+
+        script = f"""sec codex_{label}():
+  on_tool_xmlrpc = rpc_factory("xmlrpc", "http://localhost:41414")
+  on_tool_xmlrpc.twofg_grip_external(0, {width}, {force}, 100)
+end
+"""
+
+        try:
+            with socket.create_connection(
+                (self.robot_ip, self.ROBOT_SCRIPT_PORT),
+                timeout=self.ROBOT_SCRIPT_TIMEOUT_SEC,
+            ) as sock:
+                sock.sendall(script.encode("utf-8"))
+        except OSError as exc:
+            return False, f"Failed to send gripper {label} command: {exc}"
+
+        message = f"Sent gripper {label} command."
+        self._publish_status(message)
+        time.sleep(self.GRIPPER_SETTLE_SEC)
+        return True, message
+
     def _execute_pose(
         self,
         label: str,
@@ -318,6 +369,12 @@ class PickMoveItExecutorNode(Node):
 
     def _handle_execute_pick(self, request, response):
         del request
+        ok, message = self._send_gripper_command("open")
+        if not ok:
+            response.success = False
+            response.message = message
+            return response
+
         ok, message = self._execute_pose(
             "approach",
             self.latest_approach_pose,
@@ -335,6 +392,12 @@ class PickMoveItExecutorNode(Node):
             self.latest_grasp_received_ns,
             cartesian=self.CARTESIAN_GRASP,
         )
+        if not ok:
+            response.success = False
+            response.message = message
+            return response
+
+        ok, message = self._send_gripper_command("close")
         response.success = ok
         response.message = message
         return response
@@ -346,6 +409,16 @@ class PickMoveItExecutorNode(Node):
             self.ready_joint_positions_rad,
             self.ready_joint_positions_deg,
         )
+        return response
+
+    def _handle_open_gripper(self, request, response):
+        del request
+        response.success, response.message = self._send_gripper_command("open")
+        return response
+
+    def _handle_close_gripper(self, request, response):
+        del request
+        response.success, response.message = self._send_gripper_command("close")
         return response
 
 
