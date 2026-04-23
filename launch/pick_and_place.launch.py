@@ -72,8 +72,8 @@ def generate_launch_description():
                 "handeye_result_file",
                 default_value=default_handeye_result_path,
             ),
-            DeclareLaunchArgument("pick_approach_offset_z", default_value="0.01"),
-            DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.01"),
+            DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
+            DeclareLaunchArgument("pick_grasp_offset_z", default_value="0.02"),
             DeclareLaunchArgument(
                 "ready_joint_positions_deg",
                 default_value="[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]",
