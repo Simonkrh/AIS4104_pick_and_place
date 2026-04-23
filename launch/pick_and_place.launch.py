@@ -81,6 +81,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
+            DeclareLaunchArgument("pick_table_top_z", default_value="-0.01"),
+            DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.005"),
             DeclareLaunchArgument(
                 "pick_tool_yaw",
                 default_value="3.14159265359",
@@ -172,6 +174,12 @@ def generate_launch_description():
                         )
                     },
                     {"grasp_offset_z": LaunchConfiguration("pick_grasp_offset_z")},
+                    {"table_top_z": LaunchConfiguration("pick_table_top_z")},
+                    {
+                        "min_grasp_clearance_z": LaunchConfiguration(
+                            "pick_min_grasp_clearance_z"
+                        )
+                    },
                     {"tool_yaw": LaunchConfiguration("pick_tool_yaw")},
                     {
                         "approach_camera_offset_x": LaunchConfiguration(

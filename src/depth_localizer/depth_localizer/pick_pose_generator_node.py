@@ -42,6 +42,8 @@ class PickPoseGeneratorNode(Node):
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("approach_offset_z", 0.35)
         self.declare_parameter("grasp_offset_z", -0.02)
+        self.declare_parameter("table_top_z", -0.01)
+        self.declare_parameter("min_grasp_clearance_z", 0.005)
         self.declare_parameter("tool_roll", math.pi)
         self.declare_parameter("tool_yaw", math.pi)
         self.declare_parameter("approach_camera_offset_x", 0.0)
@@ -52,6 +54,10 @@ class PickPoseGeneratorNode(Node):
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.approach_offset_z = float(self.get_parameter("approach_offset_z").value)
         self.grasp_offset_z = float(self.get_parameter("grasp_offset_z").value)
+        self.table_top_z = float(self.get_parameter("table_top_z").value)
+        self.min_grasp_clearance_z = max(
+            float(self.get_parameter("min_grasp_clearance_z").value), 0.0
+        )
         tool_roll = float(self.get_parameter("tool_roll").value)
         tool_yaw = float(self.get_parameter("tool_yaw").value)
         self.approach_camera_offset_x = float(
@@ -114,6 +120,9 @@ class PickPoseGeneratorNode(Node):
         pose.pose.position.x = float(source_pose.pose.position.x)
         pose.pose.position.y = float(source_pose.pose.position.y)
         pose.pose.position.z = float(source_pose.pose.position.z) + z_offset
+        if not compensate_camera_offset:
+            min_grasp_z = self.table_top_z + self.min_grasp_clearance_z
+            pose.pose.position.z = max(pose.pose.position.z, min_grasp_z)
         if compensate_camera_offset:
             offset_x, offset_y = self._rotate_xy_offset_to_pose_frame(
                 self.approach_camera_offset_x,
