@@ -216,10 +216,30 @@ python3 tools/collect_eye_in_hand_samples.py
 
 Move the robot to different stable poses. Press `s` to save a sample and `q` to quit. Aim for about 15-30 good samples.
 
+Optional automatic capture from hardcoded good poses:
+
+```bash
+python3 tools/auto_collect_eye_in_hand_samples.py
+```
+
+Preview without moving:
+
+```bash
+python3 tools/auto_collect_eye_in_hand_samples.py --dry-run
+```
+
+Automatic samples are saved in `calibration/eye_in_hand_auto`.
+
 ### 3) Solve calibration
 
 ```bash
 python3 tools/solve_eye_in_hand.py
+```
+
+Solve automatic samples:
+
+```bash
+python3 tools/solve_eye_in_hand.py --session-dir calibration/eye_in_hand_auto
 ```
 
 If you use another calibration file, pass it to the launch:
