@@ -59,7 +59,7 @@ class PickMoveItExecutorNode(Node):
         )
         self.declare_parameter(
             "dice_drop_joint_positions_deg",
-            [-80.0, -120.0, 0.0, -140.0, 90.0, 190.0],
+            [-80.0, -140.0, 0.0, -150.0, 90.0, 190.0],
         )
         self.declare_parameter(
             "dice_repick_joint_positions_deg",
@@ -211,6 +211,10 @@ class PickMoveItExecutorNode(Node):
         )
         self._moveit.max_velocity = 1.0
         self._moveit.max_acceleration = 1.0
+        self._moveit.pipeline_id = "ompl"
+        self._moveit.planner_id = "RRTConnect"
+        self._moveit.allowed_planning_time = 1
+        self._moveit.num_planning_attempts = 10
 
         self._plan_client = self.create_client(
             srv_type=GetMotionPlan,
