@@ -30,6 +30,12 @@ def _quaternion_from_rpy(
     return qx, qy, qz, qw
 
 
+def _yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
 class PickPoseGeneratorNode(Node):
     APPROACH_TF_FRAME = "pick_approach"
     GRASP_TF_FRAME = "pick_grasp"
@@ -58,16 +64,14 @@ class PickPoseGeneratorNode(Node):
         self.min_grasp_clearance_z = max(
             float(self.get_parameter("min_grasp_clearance_z").value), 0.0
         )
-        tool_roll = float(self.get_parameter("tool_roll").value)
-        tool_yaw = float(self.get_parameter("tool_yaw").value)
+        self.tool_roll = float(self.get_parameter("tool_roll").value)
+        self.tool_yaw = float(self.get_parameter("tool_yaw").value)
         self.approach_camera_offset_x = float(
             self.get_parameter("approach_camera_offset_x").value
         )
         self.approach_camera_offset_y = float(
             self.get_parameter("approach_camera_offset_y").value
         )
-
-        self.orientation_xyzw = _quaternion_from_rpy(tool_roll, 0.0, tool_yaw)
 
         self.approach_pub = self.create_publisher(PoseStamped, self.approach_topic, 10)
         self.grasp_pub = self.create_publisher(PoseStamped, self.grasp_topic, 10)
@@ -89,12 +93,14 @@ class PickPoseGeneratorNode(Node):
             self.approach_offset_z,
             output_stamp,
             compensate_camera_offset=True,
+            apply_object_yaw=False,
         )
         grasp_pose = self._make_pose(
             msg,
             self.grasp_offset_z,
             output_stamp,
             compensate_camera_offset=False,
+            apply_object_yaw=True,
         )
 
         self.approach_pub.publish(approach_pose)
@@ -113,10 +119,24 @@ class PickPoseGeneratorNode(Node):
         z_offset: float,
         output_stamp,
         compensate_camera_offset: bool,
+        apply_object_yaw: bool,
     ) -> PoseStamped:
         pose = PoseStamped()
         pose.header.stamp = output_stamp
         pose.header.frame_id = source_pose.header.frame_id
+        source_delta_yaw = 0.0
+        if apply_object_yaw:
+            source_delta_yaw = _yaw_from_quaternion(
+                float(source_pose.pose.orientation.x),
+                float(source_pose.pose.orientation.y),
+                float(source_pose.pose.orientation.z),
+                float(source_pose.pose.orientation.w),
+            )
+        orientation_xyzw = _quaternion_from_rpy(
+            self.tool_roll,
+            0.0,
+            self.tool_yaw + source_delta_yaw,
+        )
         pose.pose.position.x = float(source_pose.pose.position.x)
         pose.pose.position.y = float(source_pose.pose.position.y)
         pose.pose.position.z = float(source_pose.pose.position.z) + z_offset
@@ -127,19 +147,23 @@ class PickPoseGeneratorNode(Node):
             offset_x, offset_y = self._rotate_xy_offset_to_pose_frame(
                 self.approach_camera_offset_x,
                 self.approach_camera_offset_y,
+                orientation_xyzw,
             )
             pose.pose.position.x -= offset_x
             pose.pose.position.y -= offset_y
-        pose.pose.orientation.x = float(self.orientation_xyzw[0])
-        pose.pose.orientation.y = float(self.orientation_xyzw[1])
-        pose.pose.orientation.z = float(self.orientation_xyzw[2])
-        pose.pose.orientation.w = float(self.orientation_xyzw[3])
+        pose.pose.orientation.x = float(orientation_xyzw[0])
+        pose.pose.orientation.y = float(orientation_xyzw[1])
+        pose.pose.orientation.z = float(orientation_xyzw[2])
+        pose.pose.orientation.w = float(orientation_xyzw[3])
         return pose
 
     def _rotate_xy_offset_to_pose_frame(
-        self, local_x: float, local_y: float
+        self,
+        local_x: float,
+        local_y: float,
+        orientation_xyzw: tuple[float, float, float, float],
     ) -> tuple[float, float]:
-        qx, qy, qz, qw = self.orientation_xyzw
+        qx, qy, qz, qw = orientation_xyzw
         xx = qx * qx
         xy = qx * qy
         yy = qy * qy

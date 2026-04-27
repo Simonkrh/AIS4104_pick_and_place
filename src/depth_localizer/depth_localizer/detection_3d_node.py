@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import math
+
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
@@ -12,6 +14,11 @@ from rclpy.qos import (
 )
 from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import Detection2DArray, Detection3D, Detection3DArray
+
+
+def _quaternion_from_yaw(yaw: float) -> tuple[float, float, float, float]:
+    half_yaw = 0.5 * yaw
+    return 0.0, 0.0, math.sin(half_yaw), math.cos(half_yaw)
 
 
 def _make_qos(
@@ -174,10 +181,14 @@ class Detection3DNode(Node):
             det3d = Detection3D()
             det3d.header = out.header
             det3d.results = det.results
+            qx, qy, qz, qw = _quaternion_from_yaw(float(det.bbox.center.theta))
             det3d.bbox.center.position.x = x
             det3d.bbox.center.position.y = y
             det3d.bbox.center.position.z = z
-            det3d.bbox.center.orientation.w = 1.0
+            det3d.bbox.center.orientation.x = qx
+            det3d.bbox.center.orientation.y = qy
+            det3d.bbox.center.orientation.z = qz
+            det3d.bbox.center.orientation.w = qw
             det3d.bbox.size.x = max((det.bbox.size_x * z) / self.fx, 0.0)
             det3d.bbox.size.y = max((det.bbox.size_y * z) / self.fy, 0.0)
             det3d.bbox.size.z = 0.05
@@ -186,7 +197,10 @@ class Detection3DNode(Node):
                 hyp.pose.pose.position.x = x
                 hyp.pose.pose.position.y = y
                 hyp.pose.pose.position.z = z
-                hyp.pose.pose.orientation.w = 1.0
+                hyp.pose.pose.orientation.x = qx
+                hyp.pose.pose.orientation.y = qy
+                hyp.pose.pose.orientation.z = qz
+                hyp.pose.pose.orientation.w = qw
 
             out.detections.append(det3d)
             converted += 1

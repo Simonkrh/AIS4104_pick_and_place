@@ -27,6 +27,21 @@ def _normalize_quaternion_xyzw(
     return x / norm, y / norm, z / norm, w / norm
 
 
+def _quaternion_from_yaw(yaw: float) -> tuple[float, float, float, float]:
+    half_yaw = 0.5 * yaw
+    return 0.0, 0.0, math.sin(half_yaw), math.cos(half_yaw)
+
+
+def _yaw_from_quaternion_xyzw(x: float, y: float, z: float, w: float) -> float:
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
+def _wrap_to_pi(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
 def _rotate_vector_by_quaternion_xyzw(
     qx: float,
     qy: float,
@@ -47,6 +62,8 @@ def _rotate_vector_by_quaternion_xyzw(
 
 
 class Detection3DTransformNode(Node):
+    BEST_YAW_SMOOTHING_ALPHA = 0.25
+
     def __init__(self):
         super().__init__("detection_3d_transform_node")
 
@@ -118,6 +135,8 @@ class Detection3DTransformNode(Node):
         self._accepted_best_position: Optional[tuple[float, float, float]] = None
         self._pending_best_position: Optional[tuple[float, float, float]] = None
         self._pending_best_since_ns: Optional[int] = None
+        self._accepted_best_yaw: Optional[float] = None
+        self._accepted_best_yaw_kind = ""
 
         self.get_logger().info(f"Subscribing detections: {self.input_topic}")
         self.get_logger().info(
@@ -200,6 +219,48 @@ class Detection3DTransformNode(Node):
         self._pending_best_since_ns = None
         return position
 
+    @staticmethod
+    def _orientation_kind_from_detection(det: Detection3D) -> str:
+        if not det.results:
+            return ""
+        class_id = str(det.results[0].hypothesis.class_id).strip().lower()
+        if "stick" in class_id:
+            return "stick"
+        if "cube" in class_id:
+            return "cube"
+        return ""
+
+    @staticmethod
+    def _wrap_orientation_delta(angle: float, orientation_kind: str) -> float:
+        if orientation_kind == "cube":
+            while angle <= -0.25 * math.pi:
+                angle += 0.5 * math.pi
+            while angle > 0.25 * math.pi:
+                angle -= 0.5 * math.pi
+            return angle
+        if orientation_kind == "stick":
+            while angle <= -0.5 * math.pi:
+                angle += math.pi
+            while angle > 0.5 * math.pi:
+                angle -= math.pi
+            return angle
+        return _wrap_to_pi(angle)
+
+    def _stabilize_best_yaw(self, yaw: float, orientation_kind: str) -> float:
+        if self._accepted_best_yaw is None or self._accepted_best_yaw_kind != orientation_kind:
+            self._accepted_best_yaw = yaw
+            self._accepted_best_yaw_kind = orientation_kind
+            return yaw
+
+        delta = self._wrap_orientation_delta(
+            yaw - self._accepted_best_yaw, orientation_kind
+        )
+        self._accepted_best_yaw = self._accepted_best_yaw + (
+            self.BEST_YAW_SMOOTHING_ALPHA * delta
+        )
+        self._accepted_best_yaw_kind = orientation_kind
+        return self._accepted_best_yaw
+
     def _is_stamp_stale(self, stamp) -> bool:
         stamp_ns = _stamp_to_nanoseconds(stamp)
         if stamp_ns <= 0:
@@ -278,6 +339,47 @@ class Detection3DTransformNode(Node):
         rx, ry, rz = _rotate_vector_by_quaternion_xyzw(qx, qy, qz, qw, x, y, z)
         return rx + float(t.x), ry + float(t.y), rz + float(t.z)
 
+    @staticmethod
+    def _transform_in_plane_orientation_delta(
+        transform: Optional[TransformStamped], orientation
+    ) -> tuple[float, float, float, float]:
+        source_qx, source_qy, source_qz, source_qw = _normalize_quaternion_xyzw(
+            float(orientation.x),
+            float(orientation.y),
+            float(orientation.z),
+            float(orientation.w),
+        )
+
+        if transform is None:
+            tf_qx, tf_qy, tf_qz, tf_qw = 0.0, 0.0, 0.0, 1.0
+        else:
+            tf_rotation = transform.transform.rotation
+            tf_qx, tf_qy, tf_qz, tf_qw = _normalize_quaternion_xyzw(
+                float(tf_rotation.x),
+                float(tf_rotation.y),
+                float(tf_rotation.z),
+                float(tf_rotation.w),
+            )
+
+        baseline_x, baseline_y, _ = _rotate_vector_by_quaternion_xyzw(
+            tf_qx, tf_qy, tf_qz, tf_qw, 1.0, 0.0, 0.0
+        )
+        source_axis_x, source_axis_y, source_axis_z = _rotate_vector_by_quaternion_xyzw(
+            source_qx, source_qy, source_qz, source_qw, 1.0, 0.0, 0.0
+        )
+        object_x, object_y, _ = _rotate_vector_by_quaternion_xyzw(
+            tf_qx, tf_qy, tf_qz, tf_qw, source_axis_x, source_axis_y, source_axis_z
+        )
+
+        if math.hypot(baseline_x, baseline_y) <= 1e-6:
+            return 0.0, 0.0, 0.0, 1.0
+        if math.hypot(object_x, object_y) <= 1e-6:
+            return 0.0, 0.0, 0.0, 1.0
+
+        baseline_yaw = math.atan2(baseline_y, baseline_x)
+        object_yaw = math.atan2(object_y, object_x)
+        return _quaternion_from_yaw(_wrap_to_pi(object_yaw - baseline_yaw))
+
     def on_detections(self, msg: Detection3DArray):
         source_frame = str(msg.header.frame_id)
         if not source_frame:
@@ -313,6 +415,9 @@ class Detection3DTransformNode(Node):
             x = float(center.x)
             y = float(center.y)
             z = float(center.z)
+            orientation_xyzw = self._transform_in_plane_orientation_delta(
+                transform, det.bbox.center.orientation
+            )
 
             if transform is not None:
                 x, y, z = self._transform_point(transform, x, y, z)
@@ -324,7 +429,10 @@ class Detection3DTransformNode(Node):
             det_out.bbox.center.position.x = x
             det_out.bbox.center.position.y = y
             det_out.bbox.center.position.z = z
-            det_out.bbox.center.orientation.w = 1.0
+            det_out.bbox.center.orientation.x = float(orientation_xyzw[0])
+            det_out.bbox.center.orientation.y = float(orientation_xyzw[1])
+            det_out.bbox.center.orientation.z = float(orientation_xyzw[2])
+            det_out.bbox.center.orientation.w = float(orientation_xyzw[3])
             det_out.bbox.size = det.bbox.size
 
             for hyp in det.results:
@@ -335,7 +443,10 @@ class Detection3DTransformNode(Node):
                 hyp_out.pose.pose.position.x = x
                 hyp_out.pose.pose.position.y = y
                 hyp_out.pose.pose.position.z = z
-                hyp_out.pose.pose.orientation.w = 1.0
+                hyp_out.pose.pose.orientation.x = float(orientation_xyzw[0])
+                hyp_out.pose.pose.orientation.y = float(orientation_xyzw[1])
+                hyp_out.pose.pose.orientation.z = float(orientation_xyzw[2])
+                hyp_out.pose.pose.orientation.w = float(orientation_xyzw[3])
                 det_out.results.append(hyp_out)
 
             out.detections.append(det_out)
@@ -358,6 +469,20 @@ class Detection3DTransformNode(Node):
             best_z,
         )
         best_x, best_y, best_z = self._stabilize_best_position(best_position)
+        best_orientation_kind = self._orientation_kind_from_detection(best)
+        best_yaw = _yaw_from_quaternion_xyzw(
+            float(best.bbox.center.orientation.x),
+            float(best.bbox.center.orientation.y),
+            float(best.bbox.center.orientation.z),
+            float(best.bbox.center.orientation.w),
+        )
+        stabilized_best_yaw = self._stabilize_best_yaw(best_yaw, best_orientation_kind)
+        (
+            stabilized_qx,
+            stabilized_qy,
+            stabilized_qz,
+            stabilized_qw,
+        ) = _quaternion_from_yaw(stabilized_best_yaw)
 
         if self.best_pose_pub is not None:
             pose = PoseStamped()
@@ -366,7 +491,10 @@ class Detection3DTransformNode(Node):
             pose.pose.position.x = best_x
             pose.pose.position.y = best_y
             pose.pose.position.z = best_z
-            pose.pose.orientation.w = 1.0
+            pose.pose.orientation.x = stabilized_qx
+            pose.pose.orientation.y = stabilized_qy
+            pose.pose.orientation.z = stabilized_qz
+            pose.pose.orientation.w = stabilized_qw
             self.best_pose_pub.publish(pose)
 
         if self.tf_broadcaster is not None:
@@ -377,7 +505,10 @@ class Detection3DTransformNode(Node):
             tf_msg.transform.translation.x = best_x
             tf_msg.transform.translation.y = best_y
             tf_msg.transform.translation.z = best_z
-            tf_msg.transform.rotation.w = 1.0
+            tf_msg.transform.rotation.x = stabilized_qx
+            tf_msg.transform.rotation.y = stabilized_qy
+            tf_msg.transform.rotation.z = stabilized_qz
+            tf_msg.transform.rotation.w = stabilized_qw
             self.tf_broadcaster.sendTransform(tf_msg)
 
     def _select_best_detection(self, msg: Detection3DArray) -> Optional[Detection3D]:

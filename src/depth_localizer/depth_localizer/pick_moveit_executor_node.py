@@ -521,12 +521,30 @@ end
                 "Approach pose is stale; reacquire the target first.",
             )
 
-        grasp_above_pose = self._clone_pose(self.latest_grasp_pose)
+        grasp_above_pose = self._clone_pose(self.latest_approach_pose)
+        grasp_above_pose.pose.position.x = float(self.latest_grasp_pose.pose.position.x)
+        grasp_above_pose.pose.position.y = float(self.latest_grasp_pose.pose.position.y)
         grasp_above_pose.pose.position.z = max(
             float(self.latest_grasp_pose.pose.position.z),
             float(self.latest_approach_pose.pose.position.z),
         )
-        return grasp_above_pose, self.latest_grasp_received_ns, ""
+        return grasp_above_pose, self.latest_approach_received_ns, ""
+
+    def _build_grasp_rotate_pose(
+        self, grasp_above_pose: PoseStamped
+    ) -> tuple[Optional[PoseStamped], Optional[int], str]:
+        if self.latest_grasp_pose is None:
+            return None, None, "No cached grasp pose yet."
+        if not self._pose_is_fresh(self.latest_grasp_received_ns, "grasp"):
+            return (
+                None,
+                None,
+                "Grasp pose is stale; reacquire the target first.",
+            )
+
+        grasp_rotate_pose = self._clone_pose(grasp_above_pose)
+        grasp_rotate_pose.pose.orientation = self.latest_grasp_pose.pose.orientation
+        return grasp_rotate_pose, self.latest_grasp_received_ns, ""
 
     def _execute_grasp(self) -> tuple[bool, str]:
         grasp_above_pose, grasp_above_received_ns, error_message = (
@@ -539,6 +557,21 @@ end
             "grasp above object",
             grasp_above_pose,
             grasp_above_received_ns,
+            cartesian=False,
+        )
+        if not ok:
+            return False, message
+
+        grasp_rotate_pose, grasp_rotate_received_ns, error_message = (
+            self._build_grasp_rotate_pose(grasp_above_pose)
+        )
+        if grasp_rotate_pose is None:
+            return False, error_message
+
+        ok, message = self._execute_pose(
+            "rotate above object",
+            grasp_rotate_pose,
+            grasp_rotate_received_ns,
             cartesian=False,
         )
         if not ok:
