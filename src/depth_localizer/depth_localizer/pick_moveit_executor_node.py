@@ -59,11 +59,11 @@ class PickMoveItExecutorNode(Node):
         )
         self.declare_parameter(
             "dice_drop_joint_positions_deg",
-            [-80.0, -140.0, 0.0, -150.0, 90.0, 190.0],
+            [-80.0, -120.0, 0.0, -140.0, 90.0, 190.0],
         )
         self.declare_parameter(
             "dice_repick_joint_positions_deg",
-            [-80.0, -105.0, 0.0, -160.0, 90.0, 190.0],
+            [-80.0, -105.0, 0.0, -163.0, 90.0, 190.0],
         )
         self.declare_parameter("dice_repick_wait_sec", 2.0)
         self.declare_parameter("robot_ip", self.DEFAULT_ROBOT_IP)
@@ -213,8 +213,10 @@ class PickMoveItExecutorNode(Node):
         self._moveit.max_acceleration = 1.0
         self._moveit.pipeline_id = "ompl"
         self._moveit.planner_id = "RRTConnect"
-        self._moveit.allowed_planning_time = 1
+        self._moveit.allowed_planning_time = 3.0
         self._moveit.num_planning_attempts = 10
+        self._moveit._MoveIt2__move_action_goal.planning_options.replan = True
+        self._moveit._MoveIt2__move_action_goal.planning_options.replan_attempts = 10
 
         self._plan_client = self.create_client(
             srv_type=GetMotionPlan,
