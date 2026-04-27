@@ -503,6 +503,54 @@ end
 
         return candidates
 
+    def _build_grasp_above_pose(self) -> tuple[Optional[PoseStamped], Optional[int], str]:
+        if self.latest_grasp_pose is None:
+            return None, None, "No cached grasp pose yet."
+        if self.latest_approach_pose is None:
+            return None, None, "No cached approach pose yet."
+        if not self._pose_is_fresh(self.latest_grasp_received_ns, "grasp"):
+            return (
+                None,
+                None,
+                "Grasp pose is stale; reacquire the target first.",
+            )
+        if not self._pose_is_fresh(self.latest_approach_received_ns, "approach"):
+            return (
+                None,
+                None,
+                "Approach pose is stale; reacquire the target first.",
+            )
+
+        grasp_above_pose = self._clone_pose(self.latest_grasp_pose)
+        grasp_above_pose.pose.position.z = max(
+            float(self.latest_grasp_pose.pose.position.z),
+            float(self.latest_approach_pose.pose.position.z),
+        )
+        return grasp_above_pose, self.latest_grasp_received_ns, ""
+
+    def _execute_grasp(self) -> tuple[bool, str]:
+        grasp_above_pose, grasp_above_received_ns, error_message = (
+            self._build_grasp_above_pose()
+        )
+        if grasp_above_pose is None:
+            return False, error_message
+
+        ok, message = self._execute_pose(
+            "grasp above object",
+            grasp_above_pose,
+            grasp_above_received_ns,
+            cartesian=False,
+        )
+        if not ok:
+            return False, message
+
+        return self._execute_pose(
+            "grasp",
+            self.latest_grasp_pose,
+            self.latest_grasp_received_ns,
+            cartesian=self.CARTESIAN_GRASP,
+        )
+
     def _handle_execute_approach(self, request, response):
         del request
         response.success, response.message = self._execute_pose(
@@ -515,12 +563,7 @@ end
 
     def _handle_execute_grasp(self, request, response):
         del request
-        response.success, response.message = self._execute_pose(
-            "grasp",
-            self.latest_grasp_pose,
-            self.latest_grasp_received_ns,
-            cartesian=self.CARTESIAN_GRASP,
-        )
+        response.success, response.message = self._execute_grasp()
         return response
 
     def _handle_execute_pick(self, request, response):
@@ -548,12 +591,7 @@ end
             )
             time.sleep(self.approach_to_grasp_wait_sec)
 
-        ok, message = self._execute_pose(
-            "grasp",
-            self.latest_grasp_pose,
-            self.latest_grasp_received_ns,
-            cartesian=self.CARTESIAN_GRASP,
-        )
+        ok, message = self._execute_grasp()
         if not ok:
             response.success = False
             response.message = message
