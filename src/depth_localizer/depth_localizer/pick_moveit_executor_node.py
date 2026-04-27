@@ -57,14 +57,21 @@ class PickMoveItExecutorNode(Node):
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
         )
+        self.declare_parameter(
+            "dice_drop_joint_positions_deg",
+            [-80.0, -120.0, 0.0, -140.0, 90.0, 190.0],
+        )
+        self.declare_parameter(
+            "dice_repick_joint_positions_deg",
+            [-80.0, -105.0, 0.0, -160.0, 90.0, 190.0],
+        )
+        self.declare_parameter("dice_repick_wait_sec", 2.0)
         self.declare_parameter("robot_ip", self.DEFAULT_ROBOT_IP)
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
         self.status_topic = str(self.get_parameter("status_topic").value)
-        self.motion_active_topic = str(
-            self.get_parameter("motion_active_topic").value
-        )
+        self.motion_active_topic = str(self.get_parameter("motion_active_topic").value)
         self.approach_to_grasp_wait_sec = max(
             float(self.get_parameter("approach_to_grasp_wait_sec").value), 0.0
         )
@@ -85,11 +92,29 @@ class PickMoveItExecutorNode(Node):
         )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
-            self.get_parameter("ready_joint_positions_deg").value
+            self.get_parameter("ready_joint_positions_deg").value,
+            "ready_joint_positions_deg",
         )
         self.ready_joint_positions_rad = [
             math.radians(value) for value in self.ready_joint_positions_deg
         ]
+        self.dice_drop_joint_positions_deg = self._parse_joint_positions_deg(
+            self.get_parameter("dice_drop_joint_positions_deg").value,
+            "dice_drop_joint_positions_deg",
+        )
+        self.dice_drop_joint_positions_rad = [
+            math.radians(value) for value in self.dice_drop_joint_positions_deg
+        ]
+        self.dice_repick_joint_positions_deg = self._parse_joint_positions_deg(
+            self.get_parameter("dice_repick_joint_positions_deg").value,
+            "dice_repick_joint_positions_deg",
+        )
+        self.dice_repick_joint_positions_rad = [
+            math.radians(value) for value in self.dice_repick_joint_positions_deg
+        ]
+        self.dice_repick_wait_sec = max(
+            float(self.get_parameter("dice_repick_wait_sec").value), 0.0
+        )
 
         self.callback_group = ReentrantCallbackGroup()
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
@@ -102,6 +127,8 @@ class PickMoveItExecutorNode(Node):
         self.latest_approach_received_ns: Optional[int] = None
         self.latest_grasp_received_ns: Optional[int] = None
         self._motion_active_depth = 0
+        self._dice_test_running = False
+        self._dice_test_stop_requested = False
 
         self.create_subscription(
             PoseStamped,
@@ -134,6 +161,18 @@ class PickMoveItExecutorNode(Node):
             Trigger,
             "~/execute_pick",
             self._handle_execute_pick,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
+            "~/run_dice_test",
+            self._handle_run_dice_test,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
+            "~/stop_dice_test",
+            self._handle_stop_dice_test,
             callback_group=self.callback_group,
         )
         self.create_service(
@@ -192,8 +231,9 @@ class PickMoveItExecutorNode(Node):
         )
         self.get_logger().info(
             "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick, "
-            "~/move_to_ready_pose, ~/move_to_start_pose, "
-            "~/open_gripper, ~/close_gripper"
+            "~/run_dice_test, ~/stop_dice_test, "
+            "~/move_to_ready_pose, ~/move_to_start_pose, ~/open_gripper, "
+            "~/close_gripper"
         )
         self.get_logger().info(
             f"MoveIt group={self.GROUP_NAME}, base={self.BASE_LINK_NAME}, tool={self.TARGET_LINK}"
@@ -201,6 +241,13 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(
             f"Ready pose joint targets (deg): {self.ready_joint_positions_deg}"
         )
+        self.get_logger().info(
+            f"Dice drop joint targets (deg): {self.dice_drop_joint_positions_deg}"
+        )
+        self.get_logger().info(
+            f"Dice re-pick joint targets (deg): {self.dice_repick_joint_positions_deg}"
+        )
+        self.get_logger().info(f"Dice re-pick wait: {self.dice_repick_wait_sec:.2f} s")
         self.get_logger().info(
             f"Approach-to-grasp wait: {self.approach_to_grasp_wait_sec:.2f} s"
         )
@@ -214,26 +261,26 @@ class PickMoveItExecutorNode(Node):
         )
         self.get_logger().info(f"Gripper URScript target: {self.robot_ip}:30002")
 
-    def _parse_joint_positions_deg(self, value) -> list[float]:
+    def _parse_joint_positions_deg(self, value, parameter_name: str) -> list[float]:
         if isinstance(value, str):
             try:
                 parsed_value = ast.literal_eval(value)
             except (SyntaxError, ValueError) as exc:
                 raise ValueError(
-                    "ready_joint_positions_deg must be a list string like "
+                    f"{parameter_name} must be a list string like "
                     '"[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]".'
                 ) from exc
         else:
             parsed_value = value
 
         if not isinstance(parsed_value, (list, tuple)):
-            raise ValueError("ready_joint_positions_deg must contain six joint values.")
+            raise ValueError(f"{parameter_name} must contain six joint values.")
 
         joint_positions = [float(item) for item in parsed_value]
         expected_joint_count = len(ur.joint_names(prefix=""))
         if len(joint_positions) != expected_joint_count:
             raise ValueError(
-                "ready_joint_positions_deg must contain "
+                f"{parameter_name} must contain "
                 f"{expected_joint_count} values in UR order "
                 "[shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3]."
             )
@@ -381,12 +428,13 @@ end
         pose: Optional[PoseStamped],
         received_ns: Optional[int],
         cartesian: bool = False,
+        require_fresh_pose: bool = True,
     ) -> tuple[bool, str]:
         if pose is None:
             return False, f"No cached {label} pose yet."
         if not self._moveit_ready():
             return False, "MoveIt planning service is not available."
-        if not self._pose_is_fresh(received_ns, label):
+        if require_fresh_pose and not self._pose_is_fresh(received_ns, label):
             return (
                 False,
                 f"{label.capitalize()} pose is stale; reacquire the target first.",
@@ -422,7 +470,9 @@ end
                     success = self._wait_for_motion_completion(label)
                     if success:
                         if dx == 0.0 and dy == 0.0 and dz == 0.0:
-                            self._publish_status(f"{label.capitalize()} move completed.")
+                            self._publish_status(
+                                f"{label.capitalize()} move completed."
+                            )
                             return True, f"{label.capitalize()} move completed."
                         self._publish_status(
                             f"{label.capitalize()} move completed using nearby fallback "
@@ -503,7 +553,9 @@ end
 
         return candidates
 
-    def _build_grasp_above_pose(self) -> tuple[Optional[PoseStamped], Optional[int], str]:
+    def _get_fresh_pick_pose_snapshot(
+        self,
+    ) -> tuple[Optional[PoseStamped], Optional[PoseStamped], str]:
         if self.latest_grasp_pose is None:
             return None, None, "No cached grasp pose yet."
         if self.latest_approach_pose is None:
@@ -521,68 +573,161 @@ end
                 "Approach pose is stale; reacquire the target first.",
             )
 
-        grasp_above_pose = self._clone_pose(self.latest_approach_pose)
-        grasp_above_pose.pose.position.x = float(self.latest_grasp_pose.pose.position.x)
-        grasp_above_pose.pose.position.y = float(self.latest_grasp_pose.pose.position.y)
-        grasp_above_pose.pose.position.z = max(
-            float(self.latest_grasp_pose.pose.position.z),
-            float(self.latest_approach_pose.pose.position.z),
+        return (
+            self._clone_pose(self.latest_approach_pose),
+            self._clone_pose(self.latest_grasp_pose),
+            "",
         )
-        return grasp_above_pose, self.latest_approach_received_ns, ""
+
+    def _build_grasp_above_pose(
+        self, approach_pose: PoseStamped, grasp_pose: PoseStamped
+    ) -> PoseStamped:
+        grasp_above_pose = self._clone_pose(approach_pose)
+        grasp_above_pose.pose.position.x = float(grasp_pose.pose.position.x)
+        grasp_above_pose.pose.position.y = float(grasp_pose.pose.position.y)
+        grasp_above_pose.pose.position.z = max(
+            float(grasp_pose.pose.position.z),
+            float(approach_pose.pose.position.z),
+        )
+        return grasp_above_pose
 
     def _build_grasp_rotate_pose(
-        self, grasp_above_pose: PoseStamped
-    ) -> tuple[Optional[PoseStamped], Optional[int], str]:
-        if self.latest_grasp_pose is None:
-            return None, None, "No cached grasp pose yet."
-        if not self._pose_is_fresh(self.latest_grasp_received_ns, "grasp"):
-            return (
-                None,
-                None,
-                "Grasp pose is stale; reacquire the target first.",
-            )
-
+        self, grasp_above_pose: PoseStamped, grasp_pose: PoseStamped
+    ) -> PoseStamped:
         grasp_rotate_pose = self._clone_pose(grasp_above_pose)
-        grasp_rotate_pose.pose.orientation = self.latest_grasp_pose.pose.orientation
-        return grasp_rotate_pose, self.latest_grasp_received_ns, ""
+        grasp_rotate_pose.pose.orientation = grasp_pose.pose.orientation
+        return grasp_rotate_pose
 
-    def _execute_grasp(self) -> tuple[bool, str]:
-        grasp_above_pose, grasp_above_received_ns, error_message = (
-            self._build_grasp_above_pose()
+    def _execute_grasp(
+        self,
+        approach_pose: Optional[PoseStamped] = None,
+        grasp_pose: Optional[PoseStamped] = None,
+    ) -> tuple[bool, str]:
+        if approach_pose is None or grasp_pose is None:
+            approach_pose, grasp_pose, error_message = (
+                self._get_fresh_pick_pose_snapshot()
+            )
+            if approach_pose is None or grasp_pose is None:
+                return False, error_message
+
+        approach_snapshot = self._clone_pose(approach_pose)
+        grasp_snapshot = self._clone_pose(grasp_pose)
+        grasp_above_pose = self._build_grasp_above_pose(
+            approach_snapshot, grasp_snapshot
         )
-        if grasp_above_pose is None:
-            return False, error_message
 
         ok, message = self._execute_pose(
             "grasp above object",
             grasp_above_pose,
-            grasp_above_received_ns,
+            None,
             cartesian=False,
+            require_fresh_pose=False,
         )
         if not ok:
             return False, message
 
-        grasp_rotate_pose, grasp_rotate_received_ns, error_message = (
-            self._build_grasp_rotate_pose(grasp_above_pose)
+        grasp_rotate_pose = self._build_grasp_rotate_pose(
+            grasp_above_pose, grasp_snapshot
         )
-        if grasp_rotate_pose is None:
-            return False, error_message
 
         ok, message = self._execute_pose(
             "rotate above object",
             grasp_rotate_pose,
-            grasp_rotate_received_ns,
+            None,
             cartesian=False,
+            require_fresh_pose=False,
         )
         if not ok:
             return False, message
 
         return self._execute_pose(
             "grasp",
-            self.latest_grasp_pose,
-            self.latest_grasp_received_ns,
+            grasp_snapshot,
+            None,
             cartesian=self.CARTESIAN_GRASP,
+            require_fresh_pose=False,
         )
+
+    def _execute_pick_pipeline(self) -> tuple[bool, str]:
+        approach_pose, grasp_pose, error_message = self._get_fresh_pick_pose_snapshot()
+        if approach_pose is None or grasp_pose is None:
+            return False, error_message
+
+        ok, message = self._send_gripper_command("open")
+        if not ok:
+            return False, message
+
+        ok, message = self._execute_pose(
+            "approach",
+            approach_pose,
+            None,
+            cartesian=False,
+            require_fresh_pose=False,
+        )
+        if not ok:
+            return False, message
+
+        if self.approach_to_grasp_wait_sec > 0.0:
+            self._publish_status(
+                f"Waiting {self.approach_to_grasp_wait_sec:.2f}s before grasp."
+            )
+            time.sleep(self.approach_to_grasp_wait_sec)
+
+        ok, message = self._execute_grasp(approach_pose, grasp_pose)
+        if not ok:
+            return False, message
+
+        return self._send_gripper_command("close")
+
+    def _run_dice_test(self) -> tuple[bool, str]:
+        while rclpy.ok() and not self._dice_test_stop_requested:
+            self._publish_status("Dice test: picking.")
+
+            ok, message = self._execute_pick_pipeline()
+            if not ok:
+                return (
+                    False,
+                    f"Dice test stopped during pick: {message}",
+                )
+
+            ok, message = self._execute_joint_configuration(
+                "dice drop pose",
+                self.dice_drop_joint_positions_rad,
+                self.dice_drop_joint_positions_deg,
+            )
+            if not ok:
+                return (
+                    False,
+                    f"Dice test stopped moving to drop pose: {message}",
+                )
+
+            ok, message = self._send_gripper_command("open")
+            if not ok:
+                return (
+                    False,
+                    f"Dice test stopped opening gripper: {message}",
+                )
+
+            ok, message = self._execute_joint_configuration(
+                "dice pick-again pose",
+                self.dice_repick_joint_positions_rad,
+                self.dice_repick_joint_positions_deg,
+            )
+            if not ok:
+                return (
+                    False,
+                    f"Dice test stopped moving to pick-again pose: {message}",
+                )
+
+            if self.dice_repick_wait_sec > 0.0:
+                self._publish_status(
+                    f"Waiting {self.dice_repick_wait_sec:.2f}s before next dice pick."
+                )
+                time.sleep(self.dice_repick_wait_sec)
+
+        if self._dice_test_stop_requested:
+            return True, "Dice test stopped by request."
+        return True, "Dice test stopped because ROS is shutting down."
 
     def _handle_execute_approach(self, request, response):
         del request
@@ -601,38 +746,35 @@ end
 
     def _handle_execute_pick(self, request, response):
         del request
-        ok, message = self._send_gripper_command("open")
-        if not ok:
+        response.success, response.message = self._execute_pick_pipeline()
+        return response
+
+    def _handle_run_dice_test(self, request, response):
+        del request
+        if self._dice_test_running:
             response.success = False
-            response.message = message
+            response.message = "Dice test is already running."
             return response
 
-        ok, message = self._execute_pose(
-            "approach",
-            self.latest_approach_pose,
-            self.latest_approach_received_ns,
-            cartesian=False,
-        )
-        if not ok:
-            response.success = False
-            response.message = message
+        self._dice_test_running = True
+        self._dice_test_stop_requested = False
+        try:
+            response.success, response.message = self._run_dice_test()
+        finally:
+            self._dice_test_running = False
+            self._dice_test_stop_requested = False
+        return response
+
+    def _handle_stop_dice_test(self, request, response):
+        del request
+        if not self._dice_test_running:
+            response.success = True
+            response.message = "Dice test is not running."
             return response
 
-        if self.approach_to_grasp_wait_sec > 0.0:
-            self._publish_status(
-                f"Waiting {self.approach_to_grasp_wait_sec:.2f}s to reacquire target before grasp."
-            )
-            time.sleep(self.approach_to_grasp_wait_sec)
-
-        ok, message = self._execute_grasp()
-        if not ok:
-            response.success = False
-            response.message = message
-            return response
-
-        ok, message = self._send_gripper_command("close")
-        response.success = ok
-        response.message = message
+        self._dice_test_stop_requested = True
+        response.success = True
+        response.message = "Dice test stopping. waiting for current step to finish."
         return response
 
     def _handle_move_to_ready_pose(self, request, response):
