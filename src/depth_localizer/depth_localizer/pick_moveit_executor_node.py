@@ -62,6 +62,8 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("approach_fallback_z_step", 0.01)
         self.declare_parameter("approach_fallback_z_levels", 2)
         self.declare_parameter("pre_grasp_clearance_z", 0.05)
+        self.declare_parameter("grasp_velocity_scaling", 0.15)
+        self.declare_parameter("grasp_acceleration_scaling", 0.15)
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -101,6 +103,12 @@ class PickMoveItExecutorNode(Node):
         )
         self.pre_grasp_clearance_z = max(
             float(self.get_parameter("pre_grasp_clearance_z").value), 0.0
+        )
+        self.grasp_velocity_scaling = self._clamp_speed_scaling(
+            float(self.get_parameter("grasp_velocity_scaling").value)
+        )
+        self.grasp_acceleration_scaling = self._clamp_speed_scaling(
+            float(self.get_parameter("grasp_acceleration_scaling").value)
         )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
@@ -273,6 +281,11 @@ class PickMoveItExecutorNode(Node):
             f"Pre-grasp clearance: {self.pre_grasp_clearance_z:.3f} m"
         )
         self.get_logger().info(
+            "Grasp speed scaling: "
+            f"velocity={self.grasp_velocity_scaling:.2f}, "
+            f"acceleration={self.grasp_acceleration_scaling:.2f}"
+        )
+        self.get_logger().info(
             "Approach fallback search: "
             f"enabled={self.approach_fallback_enabled}, "
             f"xy_step={self.approach_fallback_xy_step:.3f} m, "
@@ -331,6 +344,10 @@ class PickMoveItExecutorNode(Node):
         msg.data = bool(active)
         self.motion_active_pub.publish(msg)
 
+    @staticmethod
+    def _clamp_speed_scaling(value: float) -> float:
+        return min(max(value, 0.01), 1.0)
+
     @contextmanager
     def _motion_active_guard(self):
         self._motion_active_depth += 1
@@ -342,6 +359,18 @@ class PickMoveItExecutorNode(Node):
             self._motion_active_depth = max(self._motion_active_depth - 1, 0)
             if self._motion_active_depth == 0:
                 self._publish_motion_active(False)
+
+    @contextmanager
+    def _moveit_speed_guard(self, velocity_scaling: float, acceleration_scaling: float):
+        old_velocity = self._moveit.max_velocity
+        old_acceleration = self._moveit.max_acceleration
+        self._moveit.max_velocity = velocity_scaling
+        self._moveit.max_acceleration = acceleration_scaling
+        try:
+            yield
+        finally:
+            self._moveit.max_velocity = old_velocity
+            self._moveit.max_acceleration = old_acceleration
 
     def _moveit_ready(self) -> bool:
         ready = self._plan_client.service_is_ready()
@@ -698,6 +727,17 @@ end
         return pose_copy
 
     @staticmethod
+    def _flip_pose_yaw(pose: PoseStamped) -> None:
+        qx = float(pose.pose.orientation.x)
+        qy = float(pose.pose.orientation.y)
+        qz = float(pose.pose.orientation.z)
+        qw = float(pose.pose.orientation.w)
+        pose.pose.orientation.x = -qy
+        pose.pose.orientation.y = qx
+        pose.pose.orientation.z = qw
+        pose.pose.orientation.w = -qz
+
+    @staticmethod
     def _format_pose_candidate_label(dx: float, dy: float, dz: float) -> str:
         if dx == 0.0 and dy == 0.0 and dz == 0.0:
             return ""
@@ -862,51 +902,42 @@ end
 
         approach_snapshot = self._clone_pose(approach_pose)
         grasp_snapshot = self._clone_pose(grasp_pose)
-        camera_offset_pre_grasp_pose = self._build_camera_offset_pre_grasp_pose(
-            approach_snapshot, grasp_snapshot
-        )
+        self._flip_pose_yaw(grasp_snapshot)
 
-        ok, message = self._execute_pose(
-            "camera-offset pre-grasp",
-            camera_offset_pre_grasp_pose,
-            None,
-            cartesian=False,
-            require_fresh_pose=False,
-        )
-        if not ok:
-            return False, message
+        with self._moveit_speed_guard(
+            self.grasp_velocity_scaling, self.grasp_acceleration_scaling
+        ):
+            grasp_above_candidates = self._build_grasp_above_candidates(
+                approach_snapshot, grasp_snapshot, approach_snapshot
+            )
 
-        camera_offset_rotate_pose = self._build_grasp_rotate_pose(
-            camera_offset_pre_grasp_pose, grasp_snapshot
-        )
+            ok, message, grasp_above_pose = self._execute_grasp_above_candidates(
+                grasp_above_candidates
+            )
+            if not ok or grasp_above_pose is None:
+                return False, message
 
-        ok, message = self._execute_pose(
-            "rotate at camera-offset pre-grasp",
-            camera_offset_rotate_pose,
-            None,
-            cartesian=False,
-            require_fresh_pose=False,
-        )
-        if not ok:
-            return False, message
+            grasp_rotate_pose = self._build_grasp_rotate_pose(
+                grasp_above_pose, grasp_snapshot
+            )
 
-        grasp_above_candidates = self._build_grasp_above_candidates(
-            camera_offset_rotate_pose, grasp_snapshot, approach_snapshot
-        )
+            ok, message = self._execute_pose(
+                "rotate above object",
+                grasp_rotate_pose,
+                None,
+                cartesian=False,
+                require_fresh_pose=False,
+            )
+            if not ok:
+                return False, message
 
-        ok, message, _grasp_above_pose = self._execute_grasp_above_candidates(
-            grasp_above_candidates
-        )
-        if not ok:
-            return False, message
-
-        return self._execute_pose(
-            "grasp",
-            grasp_snapshot,
-            None,
-            cartesian=self.CARTESIAN_GRASP,
-            require_fresh_pose=False,
-        )
+            return self._execute_pose(
+                "grasp",
+                grasp_snapshot,
+                None,
+                cartesian=self.CARTESIAN_GRASP,
+                require_fresh_pose=False,
+            )
 
     def _execute_pick_pipeline(self) -> tuple[bool, str]:
         approach_pose, grasp_pose, error_message = self._get_fresh_pick_pose_snapshot()

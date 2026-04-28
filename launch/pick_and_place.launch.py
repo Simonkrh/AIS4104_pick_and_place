@@ -80,7 +80,7 @@ def generate_launch_description():
                 default_value=default_handeye_result_path,
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
-            DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.015"),
+            DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
             DeclareLaunchArgument(
                 "pick_approach_fallback_enabled", default_value="true"
             ),
@@ -95,6 +95,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("pick_approach_fallback_z_levels", default_value="2"),
             DeclareLaunchArgument("pick_pre_grasp_clearance_z", default_value="0.05"),
+            DeclareLaunchArgument("pick_grasp_velocity_scaling", default_value="0.15"),
+            DeclareLaunchArgument(
+                "pick_grasp_acceleration_scaling", default_value="0.15"
+            ),
             DeclareLaunchArgument("pick_yaw_jump_rejection_deg", default_value="35.0"),
             DeclareLaunchArgument("pick_table_top_z", default_value="-0.015"),
             DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.01"),
@@ -268,6 +272,16 @@ def generate_launch_description():
                     {
                         "pre_grasp_clearance_z": LaunchConfiguration(
                             "pick_pre_grasp_clearance_z"
+                        )
+                    },
+                    {
+                        "grasp_velocity_scaling": LaunchConfiguration(
+                            "pick_grasp_velocity_scaling"
+                        )
+                    },
+                    {
+                        "grasp_acceleration_scaling": LaunchConfiguration(
+                            "pick_grasp_acceleration_scaling"
                         )
                     },
                 ],
