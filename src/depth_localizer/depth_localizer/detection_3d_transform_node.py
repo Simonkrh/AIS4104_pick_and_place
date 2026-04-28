@@ -81,6 +81,7 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
         self.declare_parameter("best_pose_jump_rejection_distance", 0.01)
         self.declare_parameter("best_pose_jump_rejection_hold_sec", 0.5)
+        self.declare_parameter("best_yaw_jump_rejection_deg", 35.0)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -107,6 +108,9 @@ class Detection3DTransformNode(Node):
         )
         self.best_pose_jump_rejection_hold_sec = max(
             float(self.get_parameter("best_pose_jump_rejection_hold_sec").value), 0.0
+        )
+        self.best_yaw_jump_rejection_rad = math.radians(
+            max(float(self.get_parameter("best_yaw_jump_rejection_deg").value), 0.0)
         )
 
         self.tf_buffer = Buffer()
@@ -247,7 +251,10 @@ class Detection3DTransformNode(Node):
         return _wrap_to_pi(angle)
 
     def _stabilize_best_yaw(self, yaw: float, orientation_kind: str) -> float:
-        if self._accepted_best_yaw is None or self._accepted_best_yaw_kind != orientation_kind:
+        if (
+            self._accepted_best_yaw is None
+            or self._accepted_best_yaw_kind != orientation_kind
+        ):
             self._accepted_best_yaw = yaw
             self._accepted_best_yaw_kind = orientation_kind
             return yaw
@@ -255,6 +262,12 @@ class Detection3DTransformNode(Node):
         delta = self._wrap_orientation_delta(
             yaw - self._accepted_best_yaw, orientation_kind
         )
+        if (
+            self.best_yaw_jump_rejection_rad > 0.0
+            and abs(delta) > self.best_yaw_jump_rejection_rad
+        ):
+            return self._accepted_best_yaw
+
         self._accepted_best_yaw = self._accepted_best_yaw + (
             self.BEST_YAW_SMOOTHING_ALPHA * delta
         )
