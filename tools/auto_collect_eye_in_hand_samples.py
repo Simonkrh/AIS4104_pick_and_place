@@ -651,6 +651,7 @@ def confirm_motion(
     print(f"Move frame: {move_frame}")
     print(f"Move target link: {move_target_link}")
     print(f"Velocity/acceleration scale: {args.velocity_scale}, {args.acceleration_scale}")
+    print("Existing samples in the output session will be replaced.")
 
     if args.dry_run:
         for sample in poses:
@@ -671,6 +672,29 @@ def confirm_motion(
     answer = input("Type 'yes' to start: ").strip().lower()
     if answer != "yes":
         raise RuntimeError("Aborted before robot motion.")
+
+
+def clear_output_samples(session_dir: Path) -> int:
+    removed_count = 0
+
+    for path in (
+        session_dir / "samples.json",
+        session_dir / "samples.json.bak",
+        session_dir / "samples_pruned.json",
+        session_dir / "handeye_result.json",
+    ):
+        if path.exists():
+            path.unlink()
+            removed_count += 1
+
+    images_dir = session_dir / "images"
+    if images_dir.exists():
+        for path in images_dir.glob("sample_*"):
+            if path.is_file():
+                path.unlink()
+                removed_count += 1
+
+    return removed_count
 
 
 def main():
@@ -699,6 +723,10 @@ def main():
         return
 
     ensure_directory(config.session_dir)
+    removed_count = clear_output_samples(config.session_dir)
+    if removed_count > 0:
+        print(f"Cleared {removed_count} old calibration sample files.")
+
     rclpy.init(args=None)
     node = AutoCalibrationCollector(
         config=config,
