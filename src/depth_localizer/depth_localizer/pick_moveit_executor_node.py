@@ -32,7 +32,15 @@ class PickMoveItExecutorNode(Node):
     ORIENTATION_TOLERANCE = 0.05
     CARTESIAN_GRASP = False
     CARTESIAN_MAX_STEP = 0.0025
+    JOINT_POSITION_LIMITS_RAD = {
+        "shoulder_pan_joint": (-2.0 * math.pi, 2.0 * math.pi),
+        "shoulder_lift_joint": (-2.0 * math.pi, 2.0 * math.pi),
+        "elbow_joint": (-2.0 * math.pi, 2.0 * math.pi),
+        "wrist_1_joint": (-2.0 * math.pi, 2.0 * math.pi),
+        "wrist_2_joint": (-2.0 * math.pi, 2.0 * math.pi),
+    }
     MOVEIT_WAIT_SECONDS = 5.0
+    IK_WAIT_SECONDS = 3.0
     EXECUTION_TIMEOUT_SEC = 30.0
     EXECUTION_POLL_INTERVAL_SEC = 0.05
     DEFAULT_ROBOT_IP = "192.168.0.100"
@@ -53,6 +61,7 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("approach_fallback_xy_levels", 2)
         self.declare_parameter("approach_fallback_z_step", 0.01)
         self.declare_parameter("approach_fallback_z_levels", 2)
+        self.declare_parameter("pre_grasp_clearance_z", 0.05)
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -89,6 +98,9 @@ class PickMoveItExecutorNode(Node):
         )
         self.approach_fallback_z_levels = max(
             int(self.get_parameter("approach_fallback_z_levels").value), 0
+        )
+        self.pre_grasp_clearance_z = max(
+            float(self.get_parameter("pre_grasp_clearance_z").value), 0.0
         )
         self.robot_ip = str(self.get_parameter("robot_ip").value).strip()
         self.ready_joint_positions_deg = self._parse_joint_positions_deg(
@@ -258,6 +270,9 @@ class PickMoveItExecutorNode(Node):
             f"Approach-to-grasp wait: {self.approach_to_grasp_wait_sec:.2f} s"
         )
         self.get_logger().info(
+            f"Pre-grasp clearance: {self.pre_grasp_clearance_z:.3f} m"
+        )
+        self.get_logger().info(
             "Approach fallback search: "
             f"enabled={self.approach_fallback_enabled}, "
             f"xy_step={self.approach_fallback_xy_step:.3f} m, "
@@ -351,6 +366,75 @@ class PickMoveItExecutorNode(Node):
         )
         return False
 
+    def _current_joint_positions(self, joint_names: list[str]) -> Optional[list[float]]:
+        joint_state = self._moveit.joint_state
+        if joint_state is None:
+            self.get_logger().warn("No joint state. Using requested angles instead.")
+            return None
+
+        positions_by_name = {
+            name: float(position)
+            for name, position in zip(joint_state.name, joint_state.position)
+        }
+        missing_joint_names = [
+            name for name in joint_names if name not in positions_by_name
+        ]
+        if missing_joint_names:
+            self.get_logger().warn(
+                f"Missing joint state for {', '.join(missing_joint_names)}; "
+                "using requested angles."
+            )
+            return None
+
+        return [positions_by_name[name] for name in joint_names]
+
+    @staticmethod
+    def _nearest_equivalent_angle(
+        target: float,
+        reference: float,
+        limits: Optional[tuple[float, float]] = None,
+    ) -> float:
+        if limits is not None:
+            lower_limit, upper_limit = limits
+            two_pi = 2.0 * math.pi
+            min_turns = math.ceil((lower_limit - target) / two_pi)
+            max_turns = math.floor((upper_limit - target) / two_pi)
+            candidates = [
+                target + turns * two_pi for turns in range(min_turns, max_turns + 1)
+            ]
+            if candidates:
+                return min(candidates, key=lambda angle: abs(angle - reference))
+
+        delta = target - reference
+        return reference + math.atan2(math.sin(delta), math.cos(delta))
+
+    def _nearest_equivalent_joint_positions(
+        self, joint_positions: list[float], joint_names: list[str]
+    ) -> list[float]:
+        current_positions = self._current_joint_positions(joint_names)
+        if current_positions is None:
+            return list(joint_positions)
+
+        return [
+            self._nearest_equivalent_angle(
+                target,
+                current,
+                self.JOINT_POSITION_LIMITS_RAD.get(name),
+            )
+            for name, target, current in zip(
+                joint_names, joint_positions, current_positions, strict=True
+            )
+        ]
+
+    @staticmethod
+    def _format_joint_positions(
+        joint_names: list[str], joint_positions_rad: list[float]
+    ) -> str:
+        return ", ".join(
+            f"{name}={math.degrees(value):.1f} deg"
+            for name, value in zip(joint_names, joint_positions_rad, strict=True)
+        )
+
     def _pose_is_fresh(self, received_ns: Optional[int], label: str) -> bool:
         if received_ns is None:
             self.get_logger().warn(
@@ -376,16 +460,32 @@ class PickMoveItExecutorNode(Node):
             return False, "MoveIt planning service is not available."
 
         joint_names = ur.joint_names(prefix="")
-        joints_summary = ", ".join(
-            f"{name}={value:.1f} deg"
-            for name, value in zip(joint_names, joint_positions_deg, strict=True)
+        shortest_joint_positions_rad = self._nearest_equivalent_joint_positions(
+            joint_positions_rad, joint_names
         )
+        joints_summary = self._format_joint_positions(
+            joint_names, shortest_joint_positions_rad
+        )
+        if any(
+            abs(shortest - requested) > math.radians(1.0)
+            for shortest, requested in zip(
+                shortest_joint_positions_rad, joint_positions_rad, strict=True
+            )
+        ):
+            requested_summary = ", ".join(
+                f"{name}={value:.1f} deg"
+                for name, value in zip(joint_names, joint_positions_deg, strict=True)
+            )
+            self.get_logger().info(
+                f"{label} wrapped: [{requested_summary}] -> [{joints_summary}]"
+            )
+
         self._publish_status(f"Planning {label} joint move: {joints_summary}")
 
         try:
             with self._motion_active_guard():
                 self._moveit.move_to_configuration(
-                    joint_positions=joint_positions_rad,
+                    joint_positions=shortest_joint_positions_rad,
                     joint_names=joint_names,
                     tolerance=self.JOINT_TOLERANCE,
                 )
@@ -428,6 +528,73 @@ end
         time.sleep(self.GRIPPER_SETTLE_SEC)
         return True, message
 
+    def _joint_positions_from_state(
+        self, joint_state, joint_names: list[str]
+    ) -> Optional[list[float]]:
+        positions_by_name = {
+            name: float(position)
+            for name, position in zip(joint_state.name, joint_state.position)
+        }
+        missing_joint_names = [
+            name for name in joint_names if name not in positions_by_name
+        ]
+        if missing_joint_names:
+            self.get_logger().warn(
+                f"IK result missing {', '.join(missing_joint_names)}; using pose goal."
+            )
+            return None
+
+        return [positions_by_name[name] for name in joint_names]
+
+    def _move_to_pose_with_nearest_ik(self, pose: PoseStamped) -> bool:
+        if pose.header.frame_id and pose.header.frame_id != self.BASE_LINK_NAME:
+            return False
+
+        future = self._moveit.compute_ik_async(
+            position=pose.pose.position,
+            quat_xyzw=pose.pose.orientation,
+            ik_link_name=self.TARGET_LINK,
+            start_joint_state=self._moveit.joint_state,
+            wait_for_server_timeout_sec=self.MOVEIT_WAIT_SECONDS,
+        )
+        if future is None:
+            return False
+
+        deadline = time.monotonic() + self.IK_WAIT_SECONDS
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(self.EXECUTION_POLL_INTERVAL_SEC)
+
+        if not future.done():
+            self.get_logger().warn(
+                f"IK timeout after {self.IK_WAIT_SECONDS:.1f}s. Using pose goal instead."
+            )
+            return False
+
+        ik_joint_state = self._moveit.get_compute_ik_result(future)
+        if ik_joint_state is None:
+            return False
+
+        joint_names = ur.joint_names(prefix="")
+        ik_joint_positions = self._joint_positions_from_state(
+            ik_joint_state, joint_names
+        )
+        if ik_joint_positions is None:
+            return False
+
+        shortest_joint_positions = self._nearest_equivalent_joint_positions(
+            ik_joint_positions, joint_names
+        )
+        self.get_logger().info(
+            "IK joint target: "
+            f"{self._format_joint_positions(joint_names, shortest_joint_positions)}"
+        )
+        self._moveit.move_to_configuration(
+            joint_positions=shortest_joint_positions,
+            joint_names=joint_names,
+            tolerance=self.JOINT_TOLERANCE,
+        )
+        return True
+
     def _execute_pose(
         self,
         label: str,
@@ -465,15 +632,34 @@ end
                         f"{candidate_pose.pose.position.z:.3f}) "
                         f"in {candidate_pose.header.frame_id}"
                     )
-                    self._moveit.move_to_pose(
-                        pose=candidate_pose,
-                        target_link=self.TARGET_LINK,
-                        tolerance_position=self.POSITION_TOLERANCE,
-                        tolerance_orientation=self.ORIENTATION_TOLERANCE,
-                        cartesian=cartesian,
-                        cartesian_max_step=self.CARTESIAN_MAX_STEP,
-                    )
+                    used_nearest_ik = False
+                    if not cartesian:
+                        used_nearest_ik = self._move_to_pose_with_nearest_ik(
+                            candidate_pose
+                        )
+                    if cartesian or not used_nearest_ik:
+                        self._moveit.move_to_pose(
+                            pose=candidate_pose,
+                            target_link=self.TARGET_LINK,
+                            tolerance_position=self.POSITION_TOLERANCE,
+                            tolerance_orientation=self.ORIENTATION_TOLERANCE,
+                            cartesian=cartesian,
+                            cartesian_max_step=self.CARTESIAN_MAX_STEP,
+                        )
                     success = self._wait_for_motion_completion(label)
+                    if not success and used_nearest_ik:
+                        self.get_logger().warn(
+                            f"{label.capitalize()} IK joint move failed. Trying pose goal."
+                        )
+                        self._moveit.move_to_pose(
+                            pose=candidate_pose,
+                            target_link=self.TARGET_LINK,
+                            tolerance_position=self.POSITION_TOLERANCE,
+                            tolerance_orientation=self.ORIENTATION_TOLERANCE,
+                            cartesian=False,
+                            cartesian_max_step=self.CARTESIAN_MAX_STEP,
+                        )
+                        success = self._wait_for_motion_completion(label)
                     if success:
                         if dx == 0.0 and dy == 0.0 and dz == 0.0:
                             self._publish_status(
@@ -481,12 +667,12 @@ end
                             )
                             return True, f"{label.capitalize()} move completed."
                         self._publish_status(
-                            f"{label.capitalize()} move completed using nearby fallback "
+                            f"{label.capitalize()} move completed with fallback "
                             f"(dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})."
                         )
                         return (
                             True,
-                            f"{label.capitalize()} move completed using nearby fallback.",
+                            f"{label.capitalize()} move completed with fallback.",
                         )
 
                     last_failure_message = (
@@ -585,17 +771,75 @@ end
             "",
         )
 
-    def _build_grasp_above_pose(
+    def _pre_grasp_z(
+        self, approach_pose: PoseStamped, grasp_pose: PoseStamped
+    ) -> float:
+        approach_z = float(approach_pose.pose.position.z)
+        grasp_z = float(grasp_pose.pose.position.z)
+        return max(grasp_z, min(approach_z, grasp_z + self.pre_grasp_clearance_z))
+
+    def _build_camera_offset_pre_grasp_pose(
         self, approach_pose: PoseStamped, grasp_pose: PoseStamped
     ) -> PoseStamped:
-        grasp_above_pose = self._clone_pose(approach_pose)
+        pre_grasp_pose = self._clone_pose(approach_pose)
+        pre_grasp_pose.pose.position.z = self._pre_grasp_z(approach_pose, grasp_pose)
+        return pre_grasp_pose
+
+    def _build_grasp_above_pose(
+        self, pre_grasp_pose: PoseStamped, grasp_pose: PoseStamped
+    ) -> PoseStamped:
+        grasp_above_pose = self._clone_pose(pre_grasp_pose)
         grasp_above_pose.pose.position.x = float(grasp_pose.pose.position.x)
         grasp_above_pose.pose.position.y = float(grasp_pose.pose.position.y)
-        grasp_above_pose.pose.position.z = max(
-            float(grasp_pose.pose.position.z),
-            float(approach_pose.pose.position.z),
-        )
         return grasp_above_pose
+
+    def _build_grasp_above_candidates(
+        self,
+        pre_grasp_pose: PoseStamped,
+        grasp_pose: PoseStamped,
+        approach_pose: PoseStamped,
+    ) -> list[PoseStamped]:
+        base_z = float(pre_grasp_pose.pose.position.z)
+        grasp_z = float(grasp_pose.pose.position.z)
+        approach_z = float(approach_pose.pose.position.z)
+        min_clearance_z = min(self.pre_grasp_clearance_z, 0.02)
+        min_z = grasp_z + min_clearance_z
+        max_z = max(base_z, approach_z)
+        z_offsets = [0.0, 0.02, 0.04, -0.01, -0.02, 0.06]
+
+        candidates: list[PoseStamped] = []
+        seen_z: set[float] = set()
+        for z_offset in z_offsets:
+            z = round(min(max(base_z + z_offset, min_z), max_z), 6)
+            if z in seen_z:
+                continue
+            seen_z.add(z)
+            candidate = self._build_grasp_above_pose(pre_grasp_pose, grasp_pose)
+            candidate.pose.position.z = z
+            candidates.append(candidate)
+        return candidates
+
+    def _execute_grasp_above_candidates(
+        self, candidates: list[PoseStamped]
+    ) -> tuple[bool, str, Optional[PoseStamped]]:
+        last_message = "Grasp above object move failed."
+        for index, candidate in enumerate(candidates):
+            label = (
+                "grasp above object"
+                if index == 0
+                else f"grasp above object z fallback {index}"
+            )
+            ok, message = self._execute_pose(
+                label,
+                candidate,
+                None,
+                cartesian=False,
+                require_fresh_pose=False,
+            )
+            if ok:
+                return True, message, candidate
+            last_message = message
+        return False, last_message, None
 
     def _build_grasp_rotate_pose(
         self, grasp_above_pose: PoseStamped, grasp_pose: PoseStamped
@@ -618,13 +862,13 @@ end
 
         approach_snapshot = self._clone_pose(approach_pose)
         grasp_snapshot = self._clone_pose(grasp_pose)
-        grasp_above_pose = self._build_grasp_above_pose(
+        camera_offset_pre_grasp_pose = self._build_camera_offset_pre_grasp_pose(
             approach_snapshot, grasp_snapshot
         )
 
         ok, message = self._execute_pose(
-            "grasp above object",
-            grasp_above_pose,
+            "camera-offset pre-grasp",
+            camera_offset_pre_grasp_pose,
             None,
             cartesian=False,
             require_fresh_pose=False,
@@ -632,16 +876,26 @@ end
         if not ok:
             return False, message
 
-        grasp_rotate_pose = self._build_grasp_rotate_pose(
-            grasp_above_pose, grasp_snapshot
+        camera_offset_rotate_pose = self._build_grasp_rotate_pose(
+            camera_offset_pre_grasp_pose, grasp_snapshot
         )
 
         ok, message = self._execute_pose(
-            "rotate above object",
-            grasp_rotate_pose,
+            "rotate at camera-offset pre-grasp",
+            camera_offset_rotate_pose,
             None,
             cartesian=False,
             require_fresh_pose=False,
+        )
+        if not ok:
+            return False, message
+
+        grasp_above_candidates = self._build_grasp_above_candidates(
+            camera_offset_rotate_pose, grasp_snapshot, approach_snapshot
+        )
+
+        ok, message, _grasp_above_pose = self._execute_grasp_above_candidates(
+            grasp_above_candidates
         )
         if not ok:
             return False, message

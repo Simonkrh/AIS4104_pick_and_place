@@ -80,14 +80,23 @@ def generate_launch_description():
                 default_value=default_handeye_result_path,
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
-            DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
-            DeclareLaunchArgument("pick_approach_fallback_enabled", default_value="true"),
-            DeclareLaunchArgument("pick_approach_fallback_xy_step", default_value="0.02"),
-            DeclareLaunchArgument("pick_approach_fallback_xy_levels", default_value="2"),
-            DeclareLaunchArgument("pick_approach_fallback_z_step", default_value="0.01"),
+            DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.015"),
+            DeclareLaunchArgument(
+                "pick_approach_fallback_enabled", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "pick_approach_fallback_xy_step", default_value="0.02"
+            ),
+            DeclareLaunchArgument(
+                "pick_approach_fallback_xy_levels", default_value="2"
+            ),
+            DeclareLaunchArgument(
+                "pick_approach_fallback_z_step", default_value="0.01"
+            ),
             DeclareLaunchArgument("pick_approach_fallback_z_levels", default_value="2"),
-            DeclareLaunchArgument("pick_table_top_z", default_value="-0.01"),
-            DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.005"),
+            DeclareLaunchArgument("pick_pre_grasp_clearance_z", default_value="0.05"),
+            DeclareLaunchArgument("pick_table_top_z", default_value="-0.015"),
+            DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.01"),
             DeclareLaunchArgument(
                 "pick_tool_yaw",
                 default_value="3.14159265359",
@@ -246,6 +255,11 @@ def generate_launch_description():
                     {
                         "approach_fallback_z_levels": LaunchConfiguration(
                             "pick_approach_fallback_z_levels"
+                        )
+                    },
+                    {
+                        "pre_grasp_clearance_z": LaunchConfiguration(
+                            "pick_pre_grasp_clearance_z"
                         )
                     },
                 ],
