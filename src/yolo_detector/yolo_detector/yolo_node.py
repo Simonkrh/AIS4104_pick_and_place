@@ -86,10 +86,10 @@ class YoloNode(Node):
         x2i: int,
         y2i: int,
         orientation_kind: str,
-    ) -> tuple[float, bool]:
+    ) -> tuple[float, bool, tuple[float, float]]:
         roi = image[y1i:y2i, x1i:x2i]
         if roi.size == 0:
-            return 0.0, False
+            return 0.0, False, (0.0, 0.0)
 
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(
@@ -106,21 +106,31 @@ class YoloNode(Node):
             mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         if not contours:
-            return 0.0, False
+            return 0.0, False, (0.0, 0.0)
 
         contour = max(contours, key=cv2.contourArea)
         area = float(cv2.contourArea(contour))
         if area < 0.05 * roi_area:
-            return 0.0, False
+            return 0.0, False, (0.0, 0.0)
 
-        _, (width, height), angle_deg = cv2.minAreaRect(contour)
+        moments = cv2.moments(contour)
+        if abs(float(moments["m00"])) <= 1e-6:
+            return 0.0, False, (0.0, 0.0)
+
+        centroid = (
+            float(moments["m10"]) / float(moments["m00"]) + float(x1i),
+            float(moments["m01"]) / float(moments["m00"]) + float(y1i),
+        )
+
+        rect = cv2.minAreaRect(cv2.convexHull(contour))
+        _, (width, height), angle_deg = rect
         short_side = min(float(width), float(height))
         long_side = max(float(width), float(height))
         if short_side <= 1.0:
-            return 0.0, False
+            return 0.0, False, (0.0, 0.0)
 
         if orientation_kind == "stick" and long_side / short_side < 1.3:
-            return 0.0, False
+            return 0.0, False, (0.0, 0.0)
 
         if float(height) > float(width):
             angle_deg += 90.0
@@ -130,7 +140,7 @@ class YoloNode(Node):
             theta = self._wrap_half_turn(theta + 0.5 * math.pi)
         if orientation_kind == "cube":
             theta = self._wrap_quarter_turn(theta)
-        return theta, True
+        return theta, True, centroid
 
     @staticmethod
     def _draw_orientation_line(
@@ -148,7 +158,7 @@ class YoloNode(Node):
         cv2.line(image, pt1, pt2, color, 2)
 
     @staticmethod
-    def _draw_bbox_center(image, center_x: float, center_y: float) -> None:
+    def _draw_pick_center(image, center_x: float, center_y: float) -> None:
         center = (int(round(center_x)), int(round(center_y)))
         cv2.drawMarker(
             image,
@@ -194,10 +204,12 @@ class YoloNode(Node):
 
                 bbox_center_x = (x1 + x2) / 2.0
                 bbox_center_y = (y1 + y2) / 2.0
+                pick_center_x = bbox_center_x
+                pick_center_y = bbox_center_y
                 theta = 0.0
                 orientation_kind = self._orientation_kind(name)
                 if orientation_kind:
-                    theta, theta_found = self._estimate_object_theta(
+                    theta, theta_found, mask_centroid = self._estimate_object_theta(
                         cv_img,
                         x1i,
                         y1i,
@@ -206,10 +218,11 @@ class YoloNode(Node):
                         orientation_kind,
                     )
                     if theta_found:
+                        pick_center_x, pick_center_y = mask_centroid
                         self._draw_orientation_line(
                             annotated,
-                            bbox_center_x,
-                            bbox_center_y,
+                            pick_center_x,
+                            pick_center_y,
                             theta,
                             max(x2 - x1, y2 - y1),
                             (0, 200, 255),
@@ -224,15 +237,15 @@ class YoloNode(Node):
                     (0, 255, 0),
                     2,
                 )
-                self._draw_bbox_center(annotated, bbox_center_x, bbox_center_y)
+                self._draw_pick_center(annotated, pick_center_x, pick_center_y)
 
                 det = Detection2D()
                 det.header.stamp = output_stamp
                 det.header.frame_id = frame_id
 
                 bbox = BoundingBox2D()
-                bbox.center.position.x = bbox_center_x
-                bbox.center.position.y = bbox_center_y
+                bbox.center.position.x = pick_center_x
+                bbox.center.position.y = pick_center_y
                 bbox.center.theta = theta
                 bbox.size_x = x2 - x1
                 bbox.size_y = y2 - y1
