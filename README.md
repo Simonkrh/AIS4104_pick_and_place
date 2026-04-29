@@ -172,6 +172,12 @@ Move to the current approach pose:
 ros2 service call /pick_moveit_executor_node/execute_approach std_srvs/srv/Trigger "{}"
 ```
 
+Move to the current approach pose, then reacquire the target, then recenter the camera above it (used to find the propper center of the object):
+
+```bash
+ros2 service call /pick_moveit_executor_node/execute_centered_approach std_srvs/srv/Trigger "{}"
+```
+
 Move to the current grasp pose:
 
 ```bash

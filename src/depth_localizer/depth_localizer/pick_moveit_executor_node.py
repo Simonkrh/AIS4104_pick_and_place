@@ -30,8 +30,9 @@ class PickMoveItExecutorNode(Node):
     MAX_POSE_AGE_SEC = 2.0
     POSITION_TOLERANCE = 0.005
     ORIENTATION_TOLERANCE = 0.05
-    CARTESIAN_GRASP = False
     CARTESIAN_MAX_STEP = 0.0025
+    LINEAR_GRASP_PIPELINE_ID = "pilz_industrial_motion_planner"
+    LINEAR_GRASP_PLANNER_ID = "LIN"
     JOINT_POSITION_LIMITS_RAD = {
         "shoulder_pan_joint": (-2.0 * math.pi, 2.0 * math.pi),
         "shoulder_lift_joint": (-2.0 * math.pi, 2.0 * math.pi),
@@ -173,6 +174,12 @@ class PickMoveItExecutorNode(Node):
         )
         self.create_service(
             Trigger,
+            "~/execute_centered_approach",
+            self._handle_execute_centered_approach,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
             "~/execute_grasp",
             self._handle_execute_grasp,
             callback_group=self.callback_group,
@@ -256,8 +263,8 @@ class PickMoveItExecutorNode(Node):
             f"Publishing motion active flag: {self.motion_active_topic}"
         )
         self.get_logger().info(
-            "Services: ~/execute_approach, ~/execute_grasp, ~/execute_pick, "
-            "~/run_dice_test, ~/stop_dice_test, "
+            "Services: ~/execute_approach, ~/execute_centered_approach, "
+            "~/execute_grasp, ~/execute_pick, ~/run_dice_test, ~/stop_dice_test, "
             "~/move_to_ready_pose, ~/move_to_start_pose, ~/open_gripper, "
             "~/close_gripper"
         )
@@ -371,6 +378,18 @@ class PickMoveItExecutorNode(Node):
         finally:
             self._moveit.max_velocity = old_velocity
             self._moveit.max_acceleration = old_acceleration
+
+    @contextmanager
+    def _moveit_planner_guard(self, pipeline_id: str, planner_id: str):
+        old_pipeline_id = self._moveit.pipeline_id
+        old_planner_id = self._moveit.planner_id
+        self._moveit.pipeline_id = pipeline_id
+        self._moveit.planner_id = planner_id
+        try:
+            yield
+        finally:
+            self._moveit.pipeline_id = old_pipeline_id
+            self._moveit.planner_id = old_planner_id
 
     def _moveit_ready(self) -> bool:
         ready = self._plan_client.service_is_ready()
@@ -631,6 +650,8 @@ end
         received_ns: Optional[int],
         cartesian: bool = False,
         require_fresh_pose: bool = True,
+        use_nearest_ik: bool = True,
+        planner_label: str = "",
     ) -> tuple[bool, str]:
         if pose is None:
             return False, f"No cached {label} pose yet."
@@ -654,15 +675,16 @@ end
             with self._motion_active_guard():
                 for dx, dy, dz, candidate_pose in candidates:
                     candidate_label = self._format_pose_candidate_label(dx, dy, dz)
+                    planner_text = f" with {planner_label}" if planner_label else ""
                     self._publish_status(
-                        f"Planning {label} move{candidate_label} to "
+                        f"Planning {label} move{candidate_label}{planner_text} to "
                         f"({candidate_pose.pose.position.x:.3f}, "
                         f"{candidate_pose.pose.position.y:.3f}, "
                         f"{candidate_pose.pose.position.z:.3f}) "
                         f"in {candidate_pose.header.frame_id}"
                     )
                     used_nearest_ik = False
-                    if not cartesian:
+                    if use_nearest_ik and not cartesian:
                         used_nearest_ik = self._move_to_pose_with_nearest_ik(
                             candidate_pose
                         )
@@ -711,6 +733,21 @@ end
             return False, f"MoveIt failed during {label}: {exc}"
 
         return False, last_failure_message
+
+    def _execute_linear_grasp_pose(self, pose: PoseStamped) -> tuple[bool, str]:
+        with self._moveit_planner_guard(
+            self.LINEAR_GRASP_PIPELINE_ID,
+            self.LINEAR_GRASP_PLANNER_ID,
+        ):
+            return self._execute_pose(
+                "grasp",
+                pose,
+                None,
+                cartesian=False,
+                require_fresh_pose=False,
+                use_nearest_ik=False,
+                planner_label="Pilz LIN",
+            )
 
     @staticmethod
     def _clone_pose(pose: PoseStamped) -> PoseStamped:
@@ -810,6 +847,33 @@ end
             self._clone_pose(self.latest_grasp_pose),
             "",
         )
+
+    def _wait_for_reacquired_pick_pose_snapshot(
+        self, min_received_ns: int, reason: str
+    ) -> tuple[Optional[PoseStamped], Optional[PoseStamped], str]:
+        wait_sec = self.approach_to_grasp_wait_sec
+        if wait_sec > 0.0:
+            self._publish_status(f"Waiting {wait_sec:.2f}s {reason}.")
+
+        deadline = time.monotonic() + wait_sec
+        while True:
+            if (
+                self.latest_approach_received_ns is not None
+                and self.latest_grasp_received_ns is not None
+                and self.latest_approach_received_ns > min_received_ns
+                and self.latest_grasp_received_ns > min_received_ns
+            ):
+                return self._get_fresh_pick_pose_snapshot()
+
+            if wait_sec <= 0.0 or time.monotonic() >= deadline:
+                break
+
+            remaining_sec = deadline - time.monotonic()
+            if remaining_sec <= 0.0:
+                break
+            time.sleep(min(self.EXECUTION_POLL_INTERVAL_SEC, remaining_sec))
+
+        return None, None, f"No updated pick pose received {reason}."
 
     def _pre_grasp_z(
         self, approach_pose: PoseStamped, grasp_pose: PoseStamped
@@ -931,22 +995,12 @@ end
             if not ok:
                 return False, message
 
-            return self._execute_pose(
-                "grasp",
-                grasp_snapshot,
-                None,
-                cartesian=self.CARTESIAN_GRASP,
-                require_fresh_pose=False,
-            )
+            return self._execute_linear_grasp_pose(grasp_snapshot)
 
-    def _execute_pick_pipeline(self) -> tuple[bool, str]:
+    def _execute_centered_approach(self) -> tuple[bool, str]:
         approach_pose, grasp_pose, error_message = self._get_fresh_pick_pose_snapshot()
         if approach_pose is None or grasp_pose is None:
             return False, error_message
-
-        ok, message = self._send_gripper_command("open")
-        if not ok:
-            return False, message
 
         ok, message = self._execute_pose(
             "approach",
@@ -958,11 +1012,42 @@ end
         if not ok:
             return False, message
 
-        if self.approach_to_grasp_wait_sec > 0.0:
-            self._publish_status(
-                f"Waiting {self.approach_to_grasp_wait_sec:.2f}s before grasp."
+        approach_completed_ns = self.get_clock().now().nanoseconds
+        approach_pose, grasp_pose, error_message = (
+            self._wait_for_reacquired_pick_pose_snapshot(
+                approach_completed_ns,
+                "to recenter camera over target",
             )
-            time.sleep(self.approach_to_grasp_wait_sec)
+        )
+        if approach_pose is None or grasp_pose is None:
+            return False, error_message
+
+        return self._execute_pose(
+            "camera-center approach",
+            approach_pose,
+            None,
+            cartesian=False,
+            require_fresh_pose=False,
+        )
+
+    def _execute_pick_pipeline(self) -> tuple[bool, str]:
+        ok, message = self._send_gripper_command("open")
+        if not ok:
+            return False, message
+
+        ok, message = self._execute_centered_approach()
+        if not ok:
+            return False, message
+
+        recenter_completed_ns = self.get_clock().now().nanoseconds
+        approach_pose, grasp_pose, error_message = (
+            self._wait_for_reacquired_pick_pose_snapshot(
+                recenter_completed_ns,
+                "before grasp",
+            )
+        )
+        if approach_pose is None or grasp_pose is None:
+            return False, error_message
 
         ok, message = self._execute_grasp(approach_pose, grasp_pose)
         if not ok:
@@ -1028,6 +1113,11 @@ end
             self.latest_approach_received_ns,
             cartesian=False,
         )
+        return response
+
+    def _handle_execute_centered_approach(self, request, response):
+        del request
+        response.success, response.message = self._execute_centered_approach()
         return response
 
     def _handle_execute_grasp(self, request, response):
