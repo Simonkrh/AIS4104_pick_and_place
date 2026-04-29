@@ -147,6 +147,19 @@ class YoloNode(Node):
         pt2 = (int(round(center_x + dx)), int(round(center_y + dy)))
         cv2.line(image, pt1, pt2, color, 2)
 
+    @staticmethod
+    def _draw_bbox_center(image, center_x: float, center_y: float) -> None:
+        center = (int(round(center_x)), int(round(center_y)))
+        cv2.drawMarker(
+            image,
+            center,
+            (255, 0, 255),
+            markerType=cv2.MARKER_CROSS,
+            markerSize=18,
+            thickness=2,
+        )
+        cv2.circle(image, center, 5, (255, 0, 255), 2)
+
     def cb(self, msg: Image):
         output_stamp = msg.header.stamp
         frame_id = str(msg.header.frame_id)
@@ -179,6 +192,8 @@ class YoloNode(Node):
                 y2i = max(0, min(y2i, image_height))
                 cv2.rectangle(annotated, (x1i, y1i), (x2i, y2i), (0, 255, 0), 2)
 
+                bbox_center_x = (x1 + x2) / 2.0
+                bbox_center_y = (y1 + y2) / 2.0
                 theta = 0.0
                 orientation_kind = self._orientation_kind(name)
                 if orientation_kind:
@@ -193,8 +208,8 @@ class YoloNode(Node):
                     if theta_found:
                         self._draw_orientation_line(
                             annotated,
-                            (x1 + x2) / 2.0,
-                            (y1 + y2) / 2.0,
+                            bbox_center_x,
+                            bbox_center_y,
                             theta,
                             max(x2 - x1, y2 - y1),
                             (0, 200, 255),
@@ -209,14 +224,15 @@ class YoloNode(Node):
                     (0, 255, 0),
                     2,
                 )
+                self._draw_bbox_center(annotated, bbox_center_x, bbox_center_y)
 
                 det = Detection2D()
                 det.header.stamp = output_stamp
                 det.header.frame_id = frame_id
 
                 bbox = BoundingBox2D()
-                bbox.center.position.x = (x1 + x2) / 2.0
-                bbox.center.position.y = (y1 + y2) / 2.0
+                bbox.center.position.x = bbox_center_x
+                bbox.center.position.y = bbox_center_y
                 bbox.center.theta = theta
                 bbox.size_x = x2 - x1
                 bbox.size_y = y2 - y1
