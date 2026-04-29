@@ -147,6 +147,12 @@ ros2 launch ./launch/pick_and_place.launch.py \
 
 ## Useful Services
 
+You can also open a small button panel for the common services, including dice test start/stop:
+
+```bash
+python3 tools/pick_service_panel.py
+```
+
 Move robot to the ready/start pose:
 
 ```bash
