@@ -39,13 +39,15 @@ def generate_launch_description():
         .to_moveit_configs()
     )
 
-    ompl_pipeline = moveit_config.planning_pipelines.get("ompl", {})
-    request_adapters = list(ompl_pipeline.get("request_adapters", []))
-    ompl_pipeline["request_adapters"] = [
-        adapter
-        for adapter in request_adapters
-        if adapter != "default_planning_request_adapters/CheckStartStateBounds"
-    ]
+    for pipeline_config in moveit_config.planning_pipelines.values():
+        if not isinstance(pipeline_config, dict):
+            continue
+        request_adapters = list(pipeline_config.get("request_adapters", []))
+        pipeline_config["request_adapters"] = [
+            adapter
+            for adapter in request_adapters
+            if adapter != "default_planning_request_adapters/CheckStartStateBounds"
+        ]
 
     warehouse_ros_config = {
         "warehouse_plugin": "warehouse_ros_sqlite::DatabaseConnection",

@@ -30,7 +30,6 @@ class PickMoveItExecutorNode(Node):
     MAX_POSE_AGE_SEC = 2.0
     POSITION_TOLERANCE = 0.005
     ORIENTATION_TOLERANCE = 0.05
-    CARTESIAN_MAX_STEP = 0.0025
     LINEAR_GRASP_PIPELINE_ID = "pilz_industrial_motion_planner"
     LINEAR_GRASP_PLANNER_ID = "LIN"
     JOINT_POSITION_LIMITS_RAD = {
@@ -648,7 +647,6 @@ end
         label: str,
         pose: Optional[PoseStamped],
         received_ns: Optional[int],
-        cartesian: bool = False,
         require_fresh_pose: bool = True,
         use_nearest_ik: bool = True,
         planner_label: str = "",
@@ -665,7 +663,7 @@ end
 
         candidates = (
             self._build_approach_candidates(pose)
-            if label == "approach" and not cartesian
+            if label == "approach"
             else [(0.0, 0.0, 0.0, pose)]
         )
 
@@ -684,18 +682,16 @@ end
                         f"in {candidate_pose.header.frame_id}"
                     )
                     used_nearest_ik = False
-                    if use_nearest_ik and not cartesian:
+                    if use_nearest_ik:
                         used_nearest_ik = self._move_to_pose_with_nearest_ik(
                             candidate_pose
                         )
-                    if cartesian or not used_nearest_ik:
+                    if not used_nearest_ik:
                         self._moveit.move_to_pose(
                             pose=candidate_pose,
                             target_link=self.TARGET_LINK,
                             tolerance_position=self.POSITION_TOLERANCE,
                             tolerance_orientation=self.ORIENTATION_TOLERANCE,
-                            cartesian=cartesian,
-                            cartesian_max_step=self.CARTESIAN_MAX_STEP,
                         )
                     success = self._wait_for_motion_completion(label)
                     if not success and used_nearest_ik:
@@ -707,8 +703,6 @@ end
                             target_link=self.TARGET_LINK,
                             tolerance_position=self.POSITION_TOLERANCE,
                             tolerance_orientation=self.ORIENTATION_TOLERANCE,
-                            cartesian=False,
-                            cartesian_max_step=self.CARTESIAN_MAX_STEP,
                         )
                         success = self._wait_for_motion_completion(label)
                     if success:
@@ -743,7 +737,6 @@ end
                 "grasp",
                 pose,
                 None,
-                cartesian=False,
                 require_fresh_pose=False,
                 use_nearest_ik=False,
                 planner_label="Pilz LIN",
@@ -937,7 +930,6 @@ end
                 label,
                 candidate,
                 None,
-                cartesian=False,
                 require_fresh_pose=False,
             )
             if ok:
@@ -989,7 +981,6 @@ end
                 "rotate above object",
                 grasp_rotate_pose,
                 None,
-                cartesian=False,
                 require_fresh_pose=False,
             )
             if not ok:
@@ -1006,7 +997,6 @@ end
             "approach",
             approach_pose,
             None,
-            cartesian=False,
             require_fresh_pose=False,
         )
         if not ok:
@@ -1026,7 +1016,6 @@ end
             "camera-center approach",
             approach_pose,
             None,
-            cartesian=False,
             require_fresh_pose=False,
         )
 
@@ -1111,7 +1100,6 @@ end
             "approach",
             self.latest_approach_pose,
             self.latest_approach_received_ns,
-            cartesian=False,
         )
         return response
 
