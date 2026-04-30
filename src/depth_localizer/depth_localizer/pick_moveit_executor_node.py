@@ -10,6 +10,7 @@ from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import Constraints, OrientationConstraint, PositionConstraint
 from moveit_msgs.srv import GetMotionPlan
 from pymoveit2 import MoveIt2
 from pymoveit2.moveit2 import MoveIt2State
@@ -17,6 +18,7 @@ from pymoveit2.robots import ur
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
@@ -38,7 +40,10 @@ class PickMoveItExecutorNode(Node):
         "elbow_joint": (-2.0 * math.pi, 2.0 * math.pi),
         "wrist_1_joint": (-2.0 * math.pi, 2.0 * math.pi),
         "wrist_2_joint": (-2.0 * math.pi, 2.0 * math.pi),
+        "wrist_3_joint": (-2.0 * math.pi, 2.0 * math.pi),
     }
+    MAX_REASONABLE_JOINT_MOVE_RAD = math.radians(180.0)
+    MOVEIT_SUCCESS = 1
     MOVEIT_WAIT_SECONDS = 5.0
     IK_WAIT_SECONDS = 3.0
     EXECUTION_TIMEOUT_SEC = 30.0
@@ -63,7 +68,7 @@ class PickMoveItExecutorNode(Node):
         self.declare_parameter("approach_fallback_z_levels", 2)
         self.declare_parameter("pre_grasp_clearance_z", 0.05)
         self.declare_parameter("grasp_velocity_scaling", 0.15)
-        self.declare_parameter("grasp_acceleration_scaling", 0.15)
+        self.declare_parameter("grasp_acceleration_scaling", 0.05)
         self.declare_parameter(
             "ready_joint_positions_deg",
             [-90.0, -90.0, 0.0, -180.0, 90.0, 180.0],
@@ -251,7 +256,7 @@ class PickMoveItExecutorNode(Node):
         )
 
         self.get_logger().info(
-            f"Waiting up to {self.MOVEIT_WAIT_SECONDS:.1f}s for MoveIt planning service..."
+            f"Waiting for MoveIt, up to {self.MOVEIT_WAIT_SECONDS:.1f}s."
         )
         self._plan_client.wait_for_service(timeout_sec=self.MOVEIT_WAIT_SECONDS)
 
@@ -268,7 +273,8 @@ class PickMoveItExecutorNode(Node):
             "~/close_gripper"
         )
         self.get_logger().info(
-            f"MoveIt group={self.GROUP_NAME}, base={self.BASE_LINK_NAME}, tool={self.TARGET_LINK}"
+            f"Using MoveIt group {self.GROUP_NAME} from {self.BASE_LINK_NAME} "
+            f"to {self.TARGET_LINK}."
         )
         self.get_logger().info(
             f"Ready pose joint targets (deg): {self.ready_joint_positions_deg}"
@@ -287,17 +293,15 @@ class PickMoveItExecutorNode(Node):
             f"Pre-grasp clearance: {self.pre_grasp_clearance_z:.3f} m"
         )
         self.get_logger().info(
-            "Grasp speed scaling: "
-            f"velocity={self.grasp_velocity_scaling:.2f}, "
-            f"acceleration={self.grasp_acceleration_scaling:.2f}"
+            "Grasp moves are slowed down: "
+            f"velocity {self.grasp_velocity_scaling:.2f}, "
+            f"acceleration {self.grasp_acceleration_scaling:.2f}."
         )
         self.get_logger().info(
-            "Approach fallback search: "
-            f"enabled={self.approach_fallback_enabled}, "
-            f"xy_step={self.approach_fallback_xy_step:.3f} m, "
-            f"xy_levels={self.approach_fallback_xy_levels}, "
-            f"z_step={self.approach_fallback_z_step:.3f} m, "
-            f"z_levels={self.approach_fallback_z_levels}"
+            "Nearby approach search: "
+            f"{'on' if self.approach_fallback_enabled else 'off'}, "
+            f"xy step {self.approach_fallback_xy_step:.3f} m, "
+            f"z step {self.approach_fallback_z_step:.3f} m."
         )
         self.get_logger().info(f"Gripper URScript target: {self.robot_ip}:30002")
 
@@ -482,18 +486,41 @@ class PickMoveItExecutorNode(Node):
             for name, value in zip(joint_names, joint_positions_rad, strict=True)
         )
 
+    def _joint_target_has_excessive_motion(
+        self, label: str, joint_names: list[str], joint_positions_rad: list[float]
+    ) -> bool:
+        current_positions = self._current_joint_positions(joint_names)
+        if current_positions is None:
+            return False
+
+        excessive = [
+            (name, abs(target - current))
+            for name, target, current in zip(
+                joint_names, joint_positions_rad, current_positions, strict=True
+            )
+            if abs(target - current) > self.MAX_REASONABLE_JOINT_MOVE_RAD
+        ]
+        if not excessive:
+            return False
+
+        summary = ", ".join(
+            f"{name}={math.degrees(delta):.1f} deg" for name, delta in excessive
+        )
+        self.get_logger().debug(
+            f"Skipping {label}; it would swing too far ({summary})."
+        )
+        return True
+
     def _pose_is_fresh(self, received_ns: Optional[int], label: str) -> bool:
         if received_ns is None:
-            self.get_logger().warn(
-                f"No local receipt timestamp recorded for {label} pose."
-            )
+            self.get_logger().warn(f"I have no timestamp for the {label} pose.")
             return False
         age_sec = (self.get_clock().now().nanoseconds - received_ns) / 1_000_000_000.0
         if age_sec <= self.MAX_POSE_AGE_SEC:
             return True
         self.get_logger().warn(
-            f"Cached {label} pose is stale "
-            f"({age_sec:.2f}s since receipt, limit {self.MAX_POSE_AGE_SEC:.2f}s)."
+            f"The {label} pose is too old "
+            f"({age_sec:.2f}s old, max {self.MAX_POSE_AGE_SEC:.2f}s)."
         )
         return False
 
@@ -510,6 +537,7 @@ class PickMoveItExecutorNode(Node):
         shortest_joint_positions_rad = self._nearest_equivalent_joint_positions(
             joint_positions_rad, joint_names
         )
+
         joints_summary = self._format_joint_positions(
             joint_names, shortest_joint_positions_rad
         )
@@ -524,10 +552,11 @@ class PickMoveItExecutorNode(Node):
                 for name, value in zip(joint_names, joint_positions_deg, strict=True)
             )
             self.get_logger().info(
-                f"{label} wrapped: [{requested_summary}] -> [{joints_summary}]"
+                f"{label} using the nearest equivalent wrist angle: "
+                f"[{requested_summary}] -> [{joints_summary}]"
             )
 
-        self._publish_status(f"Planning {label} joint move: {joints_summary}")
+        self._publish_status(f"Moving to {label}: {joints_summary}")
 
         try:
             with self._motion_active_guard():
@@ -541,9 +570,9 @@ class PickMoveItExecutorNode(Node):
             return False, f"MoveIt failed during {label}: {exc}"
 
         if success:
-            self._publish_status(f"{label.capitalize()} joint move completed.")
-            return True, f"{label.capitalize()} joint move completed."
-        return False, f"{label.capitalize()} joint move failed."
+            self._publish_status(f"{label.capitalize()} done.")
+            return True, f"{label.capitalize()} done."
+        return False, f"{label.capitalize()} failed."
 
     def _send_gripper_command(self, label: str) -> tuple[bool, str]:
         if label == "open":
@@ -570,7 +599,7 @@ end
         except OSError as exc:
             return False, f"Failed to send gripper {label} command: {exc}"
 
-        message = f"Sent gripper {label} command."
+        message = f"Gripper {label} command sent."
         self._publish_status(message)
         time.sleep(self.GRIPPER_SETTLE_SEC)
         return True, message
@@ -587,11 +616,142 @@ end
         ]
         if missing_joint_names:
             self.get_logger().warn(
-                f"IK result missing {', '.join(missing_joint_names)}; using pose goal."
+                f"IK result missing {', '.join(missing_joint_names)}."
             )
             return None
 
         return [positions_by_name[name] for name in joint_names]
+
+    def _make_pose_goal_constraints(self, pose: PoseStamped) -> Constraints:
+        frame_id = pose.header.frame_id or self.BASE_LINK_NAME
+
+        position_constraint = PositionConstraint()
+        position_constraint.header.frame_id = frame_id
+        position_constraint.link_name = self.TARGET_LINK
+        position_constraint.weight = 1.0
+
+        tolerance_region = SolidPrimitive()
+        tolerance_region.type = SolidPrimitive.SPHERE
+        tolerance_region.dimensions = [self.POSITION_TOLERANCE]
+        position_constraint.constraint_region.primitives.append(tolerance_region)
+        position_constraint.constraint_region.primitive_poses.append(pose.pose)
+
+        orientation_constraint = OrientationConstraint()
+        orientation_constraint.header.frame_id = frame_id
+        orientation_constraint.link_name = self.TARGET_LINK
+        orientation_constraint.orientation = pose.pose.orientation
+        orientation_constraint.absolute_x_axis_tolerance = self.ORIENTATION_TOLERANCE
+        orientation_constraint.absolute_y_axis_tolerance = self.ORIENTATION_TOLERANCE
+        orientation_constraint.absolute_z_axis_tolerance = self.ORIENTATION_TOLERANCE
+        orientation_constraint.weight = 1.0
+
+        constraints = Constraints()
+        constraints.position_constraints.append(position_constraint)
+        constraints.orientation_constraints.append(orientation_constraint)
+        return constraints
+
+    def _plan_pose_final_joint_positions(
+        self, pose: PoseStamped
+    ) -> Optional[tuple[list[str], list[float]]]:
+        if pose.header.frame_id and pose.header.frame_id != self.BASE_LINK_NAME:
+            return None
+
+        request = GetMotionPlan.Request()
+        motion_request = request.motion_plan_request
+        motion_request.group_name = self.GROUP_NAME
+        motion_request.planner_id = self._moveit.planner_id
+        motion_request.num_planning_attempts = self._moveit.num_planning_attempts
+        motion_request.allowed_planning_time = self._moveit.allowed_planning_time
+        motion_request.max_velocity_scaling_factor = self._moveit.max_velocity
+        motion_request.max_acceleration_scaling_factor = self._moveit.max_acceleration
+        if self._moveit.joint_state is not None:
+            motion_request.start_state.joint_state = self._moveit.joint_state
+        motion_request.goal_constraints.append(self._make_pose_goal_constraints(pose))
+
+        future = self._plan_client.call_async(request)
+        deadline = time.monotonic() + max(
+            self.IK_WAIT_SECONDS,
+            float(self._moveit.allowed_planning_time) + 1.0,
+        )
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(self.EXECUTION_POLL_INTERVAL_SEC)
+
+        if not future.done():
+            self.get_logger().debug("Pose planning fallback timed out.")
+            return None
+
+        response = future.result()
+        if response is None:
+            self.get_logger().debug("Pose planning fallback returned no response.")
+            return None
+
+        motion_response = response.motion_plan_response
+        if motion_response.error_code.val != self.MOVEIT_SUCCESS:
+            self.get_logger().debug(
+                "Pose planning fallback failed with MoveIt error code "
+                f"{motion_response.error_code.val}."
+            )
+            return None
+
+        trajectory = motion_response.trajectory.joint_trajectory
+        if not trajectory.points:
+            self.get_logger().debug("Pose planning fallback returned an empty path.")
+            return None
+
+        final_point = trajectory.points[-1]
+        if len(trajectory.joint_names) != len(final_point.positions):
+            self.get_logger().debug(
+                "Pose planning fallback returned mismatched joint names and positions."
+            )
+            return None
+
+        return (
+            list(trajectory.joint_names),
+            [float(value) for value in final_point.positions],
+        )
+
+    def _move_to_pose_with_planned_configuration(self, pose: PoseStamped) -> bool:
+        planned_target = self._plan_pose_final_joint_positions(pose)
+        if planned_target is None:
+            return False
+
+        planned_joint_names, planned_joint_positions = planned_target
+        positions_by_name = {
+            name: position
+            for name, position in zip(
+                planned_joint_names, planned_joint_positions, strict=True
+            )
+        }
+        joint_names = ur.joint_names(prefix="")
+        missing_joint_names = [
+            name for name in joint_names if name not in positions_by_name
+        ]
+        if missing_joint_names:
+            self.get_logger().debug(
+                "Pose planning fallback result missing "
+                f"{', '.join(missing_joint_names)}."
+            )
+            return False
+
+        joint_positions = [positions_by_name[name] for name in joint_names]
+        shortest_joint_positions = self._nearest_equivalent_joint_positions(
+            joint_positions, joint_names
+        )
+        self.get_logger().debug(
+            "Planned pose joint target: "
+            f"{self._format_joint_positions(joint_names, shortest_joint_positions)}"
+        )
+        if self._joint_target_has_excessive_motion(
+            "planned pose target", joint_names, shortest_joint_positions
+        ):
+            return False
+
+        self._moveit.move_to_configuration(
+            joint_positions=shortest_joint_positions,
+            joint_names=joint_names,
+            tolerance=self.JOINT_TOLERANCE,
+        )
+        return True
 
     def _move_to_pose_with_nearest_ik(self, pose: PoseStamped) -> bool:
         if pose.header.frame_id and pose.header.frame_id != self.BASE_LINK_NAME:
@@ -612,9 +772,7 @@ end
             time.sleep(self.EXECUTION_POLL_INTERVAL_SEC)
 
         if not future.done():
-            self.get_logger().warn(
-                f"IK timeout after {self.IK_WAIT_SECONDS:.1f}s. Using pose goal instead."
-            )
+            self.get_logger().warn(f"IK timeout after {self.IK_WAIT_SECONDS:.1f}s.")
             return False
 
         ik_joint_state = self._moveit.get_compute_ik_result(future)
@@ -631,10 +789,15 @@ end
         shortest_joint_positions = self._nearest_equivalent_joint_positions(
             ik_joint_positions, joint_names
         )
-        self.get_logger().info(
+        self.get_logger().debug(
             "IK joint target: "
             f"{self._format_joint_positions(joint_names, shortest_joint_positions)}"
         )
+        if self._joint_target_has_excessive_motion(
+            "IK pose target", joint_names, shortest_joint_positions
+        ):
+            return False
+
         self._moveit.move_to_configuration(
             joint_positions=shortest_joint_positions,
             joint_names=joint_names,
@@ -663,28 +826,55 @@ end
 
         candidates = (
             self._build_approach_candidates(pose)
-            if label == "approach"
+            if label in {"approach", "camera-center approach"}
             else [(0.0, 0.0, 0.0, pose)]
         )
 
-        last_failure_message = f"{label.capitalize()} move failed."
+        last_failure_message = f"Could not move to {label}."
 
         try:
             with self._motion_active_guard():
                 for dx, dy, dz, candidate_pose in candidates:
                     candidate_label = self._format_pose_candidate_label(dx, dy, dz)
                     planner_text = f" with {planner_label}" if planner_label else ""
-                    self._publish_status(
-                        f"Planning {label} move{candidate_label}{planner_text} to "
-                        f"({candidate_pose.pose.position.x:.3f}, "
-                        f"{candidate_pose.pose.position.y:.3f}, "
-                        f"{candidate_pose.pose.position.z:.3f}) "
-                        f"in {candidate_pose.header.frame_id}"
-                    )
+                    if candidate_label:
+                        self._publish_status(
+                            f"Trying {label} nearby{candidate_label}{planner_text}: "
+                            f"({candidate_pose.pose.position.x:.3f}, "
+                            f"{candidate_pose.pose.position.y:.3f}, "
+                            f"{candidate_pose.pose.position.z:.3f})"
+                        )
+                    else:
+                        self._publish_status(
+                            f"Moving to {label}{planner_text}: "
+                            f"({candidate_pose.pose.position.x:.3f}, "
+                            f"{candidate_pose.pose.position.y:.3f}, "
+                            f"{candidate_pose.pose.position.z:.3f})"
+                        )
                     used_nearest_ik = False
                     if use_nearest_ik:
                         used_nearest_ik = self._move_to_pose_with_nearest_ik(
                             candidate_pose
+                        )
+                        if (
+                            not used_nearest_ik
+                            and dx == 0.0
+                            and dy == 0.0
+                            and dz == 0.0
+                        ):
+                            self.get_logger().debug(
+                                "Quick IK failed for primary pose; "
+                                "trying planned joint fallback."
+                            )
+                            used_nearest_ik = (
+                                self._move_to_pose_with_planned_configuration(
+                                    candidate_pose
+                                )
+                            )
+                    if use_nearest_ik and not used_nearest_ik:
+                        self.get_logger().debug(
+                            f"No reasonable IK joint target for {label}"
+                            f"{candidate_label}; trying pose goal."
                         )
                     if not used_nearest_ik:
                         self._moveit.move_to_pose(
@@ -695,8 +885,9 @@ end
                         )
                     success = self._wait_for_motion_completion(label)
                     if not success and used_nearest_ik:
-                        self.get_logger().warn(
-                            f"{label.capitalize()} IK joint move failed. Trying pose goal."
+                        self.get_logger().debug(
+                            f"{label.capitalize()} IK joint move failed. "
+                            "Trying pose goal."
                         )
                         self._moveit.move_to_pose(
                             pose=candidate_pose,
@@ -707,34 +898,32 @@ end
                         success = self._wait_for_motion_completion(label)
                     if success:
                         if dx == 0.0 and dy == 0.0 and dz == 0.0:
-                            self._publish_status(
-                                f"{label.capitalize()} move completed."
-                            )
-                            return True, f"{label.capitalize()} move completed."
+                            self._publish_status(f"{label.capitalize()} done.")
+                            return True, f"{label.capitalize()} done."
                         self._publish_status(
-                            f"{label.capitalize()} move completed with fallback "
+                            f"{label.capitalize()} worked with nearby pose "
                             f"(dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})."
                         )
                         return (
                             True,
-                            f"{label.capitalize()} move completed with fallback.",
+                            f"{label.capitalize()} worked with nearby pose.",
                         )
 
                     last_failure_message = (
-                        f"{label.capitalize()} move failed{candidate_label}."
+                        f"{label.capitalize()} failed{candidate_label}."
                     )
         except Exception as exc:
             return False, f"MoveIt failed during {label}: {exc}"
 
         return False, last_failure_message
 
-    def _execute_linear_grasp_pose(self, pose: PoseStamped) -> tuple[bool, str]:
+    def _execute_linear_pose(self, label: str, pose: PoseStamped) -> tuple[bool, str]:
         with self._moveit_planner_guard(
             self.LINEAR_GRASP_PIPELINE_ID,
             self.LINEAR_GRASP_PLANNER_ID,
         ):
             return self._execute_pose(
-                "grasp",
+                label,
                 pose,
                 None,
                 require_fresh_pose=False,
@@ -771,7 +960,7 @@ end
     def _format_pose_candidate_label(dx: float, dy: float, dz: float) -> str:
         if dx == 0.0 and dy == 0.0 and dz == 0.0:
             return ""
-        return f" (fallback dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})"
+        return f" (dx={dx:+.3f}, dy={dy:+.3f}, dz={dz:+.3f})"
 
     def _build_approach_candidates(
         self, pose: PoseStamped
@@ -919,19 +1108,14 @@ end
     def _execute_grasp_above_candidates(
         self, candidates: list[PoseStamped]
     ) -> tuple[bool, str, Optional[PoseStamped]]:
-        last_message = "Grasp above object move failed."
+        last_message = "Could not move above the object."
         for index, candidate in enumerate(candidates):
             label = (
                 "grasp above object"
                 if index == 0
-                else f"grasp above object z fallback {index}"
+                else f"grasp above object, try {index + 1}"
             )
-            ok, message = self._execute_pose(
-                label,
-                candidate,
-                None,
-                require_fresh_pose=False,
-            )
+            ok, message = self._execute_linear_pose(label, candidate)
             if ok:
                 return True, message, candidate
             last_message = message
@@ -986,7 +1170,7 @@ end
             if not ok:
                 return False, message
 
-            return self._execute_linear_grasp_pose(grasp_snapshot)
+            return self._execute_linear_pose("grasp", grasp_snapshot)
 
     def _execute_centered_approach(self) -> tuple[bool, str]:
         approach_pose, grasp_pose, error_message = self._get_fresh_pick_pose_snapshot()
