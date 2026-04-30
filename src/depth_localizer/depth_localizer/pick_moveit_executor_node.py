@@ -957,6 +957,63 @@ end
         pose.pose.orientation.w = -qz
 
     @staticmethod
+    def _normalized_quaternion_from_pose(
+        pose: PoseStamped,
+    ) -> tuple[float, float, float, float]:
+        qx = float(pose.pose.orientation.x)
+        qy = float(pose.pose.orientation.y)
+        qz = float(pose.pose.orientation.z)
+        qw = float(pose.pose.orientation.w)
+        norm = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+        if norm <= 0.0:
+            return 0.0, 0.0, 0.0, 1.0
+        return qx / norm, qy / norm, qz / norm, qw / norm
+
+    @classmethod
+    def _quaternion_dot(cls, a: PoseStamped, b: PoseStamped) -> float:
+        ax, ay, az, aw = cls._normalized_quaternion_from_pose(a)
+        bx, by, bz, bw = cls._normalized_quaternion_from_pose(b)
+        return ax * bx + ay * by + az * bz + aw * bw
+
+    @classmethod
+    def _orientation_distance(cls, a: PoseStamped, b: PoseStamped) -> float:
+        dot = abs(cls._quaternion_dot(a, b))
+        dot = min(max(dot, -1.0), 1.0)
+        return 2.0 * math.acos(dot)
+
+    @classmethod
+    def _align_quaternion_hemisphere(
+        cls, reference_pose: PoseStamped, pose: PoseStamped
+    ) -> None:
+        if cls._quaternion_dot(reference_pose, pose) >= 0.0:
+            return
+        pose.pose.orientation.x *= -1.0
+        pose.pose.orientation.y *= -1.0
+        pose.pose.orientation.z *= -1.0
+        pose.pose.orientation.w *= -1.0
+
+    def _nearest_half_turn_grasp_pose(
+        self, reference_pose: PoseStamped, grasp_pose: PoseStamped
+    ) -> PoseStamped:
+        original_pose = self._clone_pose(grasp_pose)
+        flipped_pose = self._clone_pose(grasp_pose)
+        self._flip_pose_yaw(flipped_pose)
+
+        original_distance = self._orientation_distance(reference_pose, original_pose)
+        flipped_distance = self._orientation_distance(reference_pose, flipped_pose)
+        if flipped_distance + 1e-6 < original_distance:
+            self.get_logger().debug(
+                "Using half-turn equivalent grasp yaw to minimize wrist rotation "
+                f"({math.degrees(original_distance):.1f} deg -> "
+                f"{math.degrees(flipped_distance):.1f} deg)."
+            )
+            self._align_quaternion_hemisphere(reference_pose, flipped_pose)
+            return flipped_pose
+
+        self._align_quaternion_hemisphere(reference_pose, original_pose)
+        return original_pose
+
+    @staticmethod
     def _format_pose_candidate_label(dx: float, dy: float, dz: float) -> str:
         if dx == 0.0 and dy == 0.0 and dz == 0.0:
             return ""
@@ -1142,7 +1199,6 @@ end
 
         approach_snapshot = self._clone_pose(approach_pose)
         grasp_snapshot = self._clone_pose(grasp_pose)
-        self._flip_pose_yaw(grasp_snapshot)
 
         with self._moveit_speed_guard(
             self.grasp_velocity_scaling, self.grasp_acceleration_scaling
@@ -1157,6 +1213,9 @@ end
             if not ok or grasp_above_pose is None:
                 return False, message
 
+            grasp_snapshot = self._nearest_half_turn_grasp_pose(
+                grasp_above_pose, grasp_snapshot
+            )
             grasp_rotate_pose = self._build_grasp_rotate_pose(
                 grasp_above_pose, grasp_snapshot
             )
