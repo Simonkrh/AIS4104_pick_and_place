@@ -99,7 +99,6 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pick_grasp_acceleration_scaling", default_value="0.05"
             ),
-            DeclareLaunchArgument("pick_yaw_jump_rejection_deg", default_value="35.0"),
             DeclareLaunchArgument("pick_table_top_z", default_value="-0.015"),
             DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.01"),
             DeclareLaunchArgument(
@@ -180,13 +179,6 @@ def generate_launch_description():
                 executable="detection_3d_transform_node",
                 name="detection_3d_transform_node",
                 output="screen",
-                parameters=[
-                    {
-                        "best_yaw_jump_rejection_deg": LaunchConfiguration(
-                            "pick_yaw_jump_rejection_deg"
-                        )
-                    },
-                ],
             ),
             Node(
                 package="depth_localizer",
