@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+from collections import deque
+from statistics import median
 from typing import Optional
 
 import rclpy
@@ -73,7 +75,8 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("best_pose_topic", "/pick_target_pose")
         self.declare_parameter("best_tf_child_frame", "detected_object")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
-        self.declare_parameter("best_pose_jump_rejection_distance", 0.01)
+        self.declare_parameter("best_pose_filter_window_size", 5)
+        self.declare_parameter("best_pose_jump_rejection_distance", 0.03)
         self.declare_parameter("best_pose_jump_rejection_hold_sec", 0.5)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
@@ -98,6 +101,9 @@ class Detection3DTransformNode(Node):
         self.motion_active_topic = str(
             self.get_parameter("motion_active_topic").value
         ).strip()
+        self.best_pose_filter_window_size = max(
+            int(self.get_parameter("best_pose_filter_window_size").value), 1
+        )
         self.best_pose_jump_rejection_distance = max(
             float(self.get_parameter("best_pose_jump_rejection_distance").value), 0.0
         )
@@ -131,6 +137,7 @@ class Detection3DTransformNode(Node):
         self._accepted_best_position: Optional[tuple[float, float, float]] = None
         self._pending_best_position: Optional[tuple[float, float, float]] = None
         self._pending_best_since_ns: Optional[int] = None
+        self._best_position_samples = deque(maxlen=self.best_pose_filter_window_size)
 
         self.get_logger().info(f"Subscribing detections: {self.input_topic}")
         self.get_logger().info(
@@ -148,13 +155,26 @@ class Detection3DTransformNode(Node):
             f"Subscribing motion active flag: {self.motion_active_topic}"
         )
         self.get_logger().info(
+            "Best pose temporal filter: "
+            f"window={self.best_pose_filter_window_size} samples"
+        )
+        self.get_logger().info(
             "Best pose jump rejection: "
             f"distance={self.best_pose_jump_rejection_distance:.3f} m, "
             f"hold={self.best_pose_jump_rejection_hold_sec:.2f} s"
         )
 
     def _on_motion_active(self, msg: Bool) -> None:
-        self.motion_active = bool(msg.data)
+        new_motion_active = bool(msg.data)
+        if new_motion_active != self.motion_active:
+            self._reset_best_pose_filters()
+        self.motion_active = new_motion_active
+
+    def _reset_best_pose_filters(self) -> None:
+        self._accepted_best_position = None
+        self._pending_best_position = None
+        self._pending_best_since_ns = None
+        self._best_position_samples.clear()
 
     @staticmethod
     def _distance_between_points(
@@ -212,6 +232,19 @@ class Detection3DTransformNode(Node):
         self._pending_best_position = None
         self._pending_best_since_ns = None
         return position
+
+    def _filter_best_position(
+        self, position: tuple[float, float, float]
+    ) -> tuple[float, float, float]:
+        self._best_position_samples.append(position)
+        if len(self._best_position_samples) <= 1:
+            return position
+
+        return (
+            float(median(sample[0] for sample in self._best_position_samples)),
+            float(median(sample[1] for sample in self._best_position_samples)),
+            float(median(sample[2] for sample in self._best_position_samples)),
+        )
 
     def _is_stamp_stale(self, stamp) -> bool:
         stamp_ns = _stamp_to_nanoseconds(stamp)
@@ -423,6 +456,7 @@ class Detection3DTransformNode(Node):
             float(best.bbox.center.position.y),
             best_z,
         )
+        best_position = self._filter_best_position(best_position)
         best_x, best_y, best_z = self._stabilize_best_position(best_position)
         best_orientation = best.bbox.center.orientation
         best_qx = float(best_orientation.x)

@@ -80,6 +80,18 @@ def generate_launch_description():
                 "handeye_result_file",
                 default_value=default_handeye_result_path,
             ),
+            DeclareLaunchArgument("depth_center_roi_scale", default_value="0.25"),
+            DeclareLaunchArgument("depth_center_percentile", default_value="50.0"),
+            DeclareLaunchArgument("depth_center_min_valid_pixels", default_value="8"),
+            DeclareLaunchArgument("depth_fallback_roi_scale", default_value="0.80"),
+            DeclareLaunchArgument("depth_fallback_percentile", default_value="10.0"),
+            DeclareLaunchArgument("best_pose_filter_window_size", default_value="5"),
+            DeclareLaunchArgument(
+                "best_pose_jump_rejection_distance", default_value="0.03"
+            ),
+            DeclareLaunchArgument(
+                "best_pose_jump_rejection_hold_sec", default_value="0.5"
+            ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
             DeclareLaunchArgument(
@@ -176,6 +188,36 @@ def generate_launch_description():
                 parameters=[
                     {"depth_topic": depth_topic},
                     {"camera_info_topic": camera_info_topic},
+                    {
+                        "center_depth_roi_scale": ParameterValue(
+                            LaunchConfiguration("depth_center_roi_scale"),
+                            value_type=float,
+                        )
+                    },
+                    {
+                        "center_depth_percentile": ParameterValue(
+                            LaunchConfiguration("depth_center_percentile"),
+                            value_type=float,
+                        )
+                    },
+                    {
+                        "center_depth_min_valid_pixels": ParameterValue(
+                            LaunchConfiguration("depth_center_min_valid_pixels"),
+                            value_type=int,
+                        )
+                    },
+                    {
+                        "bbox_depth_roi_scale": ParameterValue(
+                            LaunchConfiguration("depth_fallback_roi_scale"),
+                            value_type=float,
+                        )
+                    },
+                    {
+                        "depth_percentile": ParameterValue(
+                            LaunchConfiguration("depth_fallback_percentile"),
+                            value_type=float,
+                        )
+                    },
                 ],
             ),
             Node(
@@ -193,6 +235,26 @@ def generate_launch_description():
                 executable="detection_3d_transform_node",
                 name="detection_3d_transform_node",
                 output="screen",
+                parameters=[
+                    {
+                        "best_pose_filter_window_size": ParameterValue(
+                            LaunchConfiguration("best_pose_filter_window_size"),
+                            value_type=int,
+                        )
+                    },
+                    {
+                        "best_pose_jump_rejection_distance": ParameterValue(
+                            LaunchConfiguration("best_pose_jump_rejection_distance"),
+                            value_type=float,
+                        )
+                    },
+                    {
+                        "best_pose_jump_rejection_hold_sec": ParameterValue(
+                            LaunchConfiguration("best_pose_jump_rejection_hold_sec"),
+                            value_type=float,
+                        )
+                    },
+                ],
             ),
             Node(
                 package="depth_localizer",

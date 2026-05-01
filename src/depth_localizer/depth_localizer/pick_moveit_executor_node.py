@@ -1258,6 +1258,7 @@ end
                 f"Search workspace: waiting {wait_sec:.2f}s at {label}."
             )
 
+        saw_2d_detection = False
         deadline = time.monotonic() + wait_sec
         while True:
             if (
@@ -1278,10 +1279,7 @@ end
                 and self.latest_yolo_detection_received_ns > min_received_ns
                 and self.latest_yolo_detection_count > 0
             ):
-                return (
-                    True,
-                    f"Detection found: {label}.",
-                )
+                saw_2d_detection = True
 
             if wait_sec <= 0.0 or time.monotonic() >= deadline:
                 break
@@ -1291,6 +1289,11 @@ end
                 break
             time.sleep(min(self.EXECUTION_POLL_INTERVAL_SEC, remaining_sec))
 
+        if saw_2d_detection:
+            return (
+                False,
+                f"Detection found: {label}. But no 3D pick pose yet.",
+            )
         return False, f"No target found from {label}."
 
     def _search_workspace(self) -> tuple[bool, str]:
@@ -1532,6 +1535,15 @@ end
 
     def _run_dice_test(self) -> tuple[bool, str]:
         while rclpy.ok() and not self._dice_test_stop_requested:
+            self._publish_status("Dice test: searching workspace.")
+
+            ok, message = self._search_workspace()
+            if not ok:
+                return (
+                    False,
+                    f"Dice test stopped during workspace search: {message}",
+                )
+
             self._publish_status("Dice test: picking.")
 
             ok, message = self._execute_pick_pipeline()
@@ -1557,13 +1569,6 @@ end
                 return (
                     False,
                     f"Dice test stopped opening gripper: {message}",
-                )
-
-            ok, message = self._search_workspace()
-            if not ok:
-                return (
-                    False,
-                    f"Dice test stopped during workspace search: {message}",
                 )
 
             if self.dice_repick_wait_sec > 0.0:

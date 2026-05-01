@@ -48,6 +48,9 @@ class Detection3DNode(Node):
         self.declare_parameter("roi_half_size", 4)
         self.declare_parameter("bbox_depth_roi_scale", 0.80)
         self.declare_parameter("depth_percentile", 10.0)
+        self.declare_parameter("center_depth_roi_scale", 0.25)
+        self.declare_parameter("center_depth_percentile", 50.0)
+        self.declare_parameter("center_depth_min_valid_pixels", 8)
         self.declare_parameter("min_depth_m", 0.10)
         self.declare_parameter("max_depth_m", 2.00)
         self.declare_parameter("max_depth_age_sec", 0.75)
@@ -66,6 +69,16 @@ class Detection3DNode(Node):
         )
         self.depth_percentile = min(
             max(float(self.get_parameter("depth_percentile").value), 0.0), 100.0
+        )
+        self.center_depth_roi_scale = max(
+            float(self.get_parameter("center_depth_roi_scale").value), 0.0
+        )
+        self.center_depth_percentile = min(
+            max(float(self.get_parameter("center_depth_percentile").value), 0.0),
+            100.0,
+        )
+        self.center_depth_min_valid_pixels = max(
+            int(self.get_parameter("center_depth_min_valid_pixels").value), 1
         )
         self.min_depth_m = float(self.get_parameter("min_depth_m").value)
         self.max_depth_m = float(self.get_parameter("max_depth_m").value)
@@ -172,8 +185,26 @@ class Detection3DNode(Node):
             bbox_half_height = int(
                 round(0.5 * float(det.bbox.size_y) * scale_v * self.bbox_depth_roi_scale)
             )
+            center_bbox_half_width = int(
+                round(
+                    0.5
+                    * float(det.bbox.size_x)
+                    * scale_u
+                    * self.center_depth_roi_scale
+                )
+            )
+            center_bbox_half_height = int(
+                round(
+                    0.5
+                    * float(det.bbox.size_y)
+                    * scale_v
+                    * self.center_depth_roi_scale
+                )
+            )
             half_width = max(self.roi_half_size, bbox_half_width)
             half_height = max(self.roi_half_size, bbox_half_height)
+            center_half_width = max(self.roi_half_size, center_bbox_half_width)
+            center_half_height = max(self.roi_half_size, center_bbox_half_height)
 
             u0 = max(0, u - half_width)
             u1 = min(width, u + half_width + 1)
@@ -182,12 +213,29 @@ class Detection3DNode(Node):
             if u0 >= u1 or v0 >= v1:
                 continue
 
-            patch = depth_image[v0:v1, u0:u1]
-            depth_values_m = self.depth_patch_to_meters(patch, depth_msg.encoding)
-            if depth_values_m.size == 0:
-                continue
+            center_u0 = max(0, u - center_half_width)
+            center_u1 = min(width, u + center_half_width + 1)
+            center_v0 = max(0, v - center_half_height)
+            center_v1 = min(height, v + center_half_height + 1)
 
-            z = float(np.percentile(depth_values_m, self.depth_percentile))
+            center_patch = depth_image[center_v0:center_v1, center_u0:center_u1]
+            center_depth_values_m = self.depth_patch_to_meters(
+                center_patch, depth_msg.encoding
+            )
+            if center_depth_values_m.size >= self.center_depth_min_valid_pixels:
+                z = float(
+                    np.percentile(
+                        center_depth_values_m,
+                        self.center_depth_percentile,
+                    )
+                )
+            else:
+                patch = depth_image[v0:v1, u0:u1]
+                depth_values_m = self.depth_patch_to_meters(patch, depth_msg.encoding)
+                if depth_values_m.size == 0:
+                    continue
+
+                z = float(np.percentile(depth_values_m, self.depth_percentile))
             if not (self.min_depth_m <= z <= self.max_depth_m):
                 continue
 
