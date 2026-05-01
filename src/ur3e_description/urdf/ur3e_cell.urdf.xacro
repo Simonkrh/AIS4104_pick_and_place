@@ -97,18 +97,18 @@
 
   <link name="$(arg tf_prefix)camera_body">
     <visual>
-      <origin xyz="0 0.03 0.015" rpy="0 0 0" />
+      <origin xyz="0 0.0375 0.015" rpy="0 0 0" />
       <geometry>
-        <box size="0.06 0.075 0.03" />
+        <box size="0.06 0.09 0.03" />
       </geometry>
       <material name="camera_blue">
         <color rgba="0.15 0.35 0.8 1.0" />
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0.03 0.015" rpy="0 0 0" />
+      <origin xyz="0 0.0375 0.015" rpy="0 0 0" />
       <geometry>
-        <box size="0.06 0.075 0.03" />
+        <box size="0.06 0.09 0.03" />
       </geometry>
     </collision>
     <visual>
