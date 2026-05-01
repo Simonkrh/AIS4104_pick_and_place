@@ -21,6 +21,7 @@ from rclpy.node import Node
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
+from vision_msgs.msg import Detection2DArray
 
 
 class PickMoveItExecutorNode(Node):
@@ -58,6 +59,7 @@ class PickMoveItExecutorNode(Node):
 
         self.declare_parameter("approach_topic", "/pick_approach_pose")
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
+        self.declare_parameter("yolo_detection_topic", "/yolo/detections")
         self.declare_parameter("status_topic", "/pick_execution_status")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
         self.declare_parameter("approach_to_grasp_wait_sec", 1.0)
@@ -100,6 +102,9 @@ class PickMoveItExecutorNode(Node):
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
         self.grasp_topic = str(self.get_parameter("grasp_topic").value)
+        self.yolo_detection_topic = str(
+            self.get_parameter("yolo_detection_topic").value
+        )
         self.status_topic = str(self.get_parameter("status_topic").value)
         self.motion_active_topic = str(self.get_parameter("motion_active_topic").value)
         self.approach_to_grasp_wait_sec = max(
@@ -187,6 +192,8 @@ class PickMoveItExecutorNode(Node):
         self.latest_grasp_pose: Optional[PoseStamped] = None
         self.latest_approach_received_ns: Optional[int] = None
         self.latest_grasp_received_ns: Optional[int] = None
+        self.latest_yolo_detection_received_ns: Optional[int] = None
+        self.latest_yolo_detection_count = 0
         self._motion_active_depth = 0
         self._dice_test_running = False
         self._dice_test_stop_requested = False
@@ -202,6 +209,13 @@ class PickMoveItExecutorNode(Node):
             PoseStamped,
             self.grasp_topic,
             self._on_grasp_pose,
+            10,
+            callback_group=self.callback_group,
+        )
+        self.create_subscription(
+            Detection2DArray,
+            self.yolo_detection_topic,
+            self._on_yolo_detections,
             10,
             callback_group=self.callback_group,
         )
@@ -304,6 +318,9 @@ class PickMoveItExecutorNode(Node):
 
         self.get_logger().info(f"Subscribing approach pose: {self.approach_topic}")
         self.get_logger().info(f"Subscribing grasp pose: {self.grasp_topic}")
+        self.get_logger().info(
+            f"Subscribing YOLO detections: {self.yolo_detection_topic}"
+        )
         self.get_logger().info(f"Publishing execution status: {self.status_topic}")
         self.get_logger().info(
             f"Publishing motion active flag: {self.motion_active_topic}"
@@ -441,6 +458,15 @@ class PickMoveItExecutorNode(Node):
             return
         self.latest_grasp_pose = msg
         self.latest_grasp_received_ns = self.get_clock().now().nanoseconds
+
+    def _on_yolo_detections(self, msg: Detection2DArray) -> None:
+        if self._motion_active_depth > 0:
+            return
+        detection_count = len(msg.detections)
+        if detection_count <= 0:
+            return
+        self.latest_yolo_detection_count = detection_count
+        self.latest_yolo_detection_received_ns = self.get_clock().now().nanoseconds
 
     def _publish_status(self, text: str) -> None:
         msg = String()
@@ -1246,6 +1272,16 @@ end
                 if approach_pose is not None and grasp_pose is not None:
                     return True, f"Target found from {label}."
                 return False, error_message
+
+            if (
+                self.latest_yolo_detection_received_ns is not None
+                and self.latest_yolo_detection_received_ns > min_received_ns
+                and self.latest_yolo_detection_count > 0
+            ):
+                return (
+                    True,
+                    f"Detection found: {label}.",
+                )
 
             if wait_sec <= 0.0 or time.monotonic() >= deadline:
                 break
