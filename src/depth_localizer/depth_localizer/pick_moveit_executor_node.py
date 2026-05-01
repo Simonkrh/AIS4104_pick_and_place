@@ -82,6 +82,20 @@ class PickMoveItExecutorNode(Node):
             [-80.0, -105.0, 0.0, -163.0, 90.0, 190.0],
         )
         self.declare_parameter("dice_repick_wait_sec", 2.0)
+        self.declare_parameter(
+            "search_start_joint_positions_deg",
+            [-80.0, -105.0, 0.0, -163.0, 90.0, 190.0],
+        )
+        self.declare_parameter(
+            "search_look_offsets_deg",
+            "[[0.0, 0.0, 0.0, 5.0, 10.0, 0.0], "
+            "[0.0, 0.0, 0.0, 5.0, -8.0, 0.0], "
+            "[0.0, 0.0, 0.0, 10.0, 0.0, 0.0], "
+            "[0.0, -6.0, 0.0, -15.0, -4.0, 6.0], "
+            "[0.0, 0.0, 0.0, -10.0, 14.0, -6.0]]",
+        )
+        self.declare_parameter("search_joint_positions_deg", "[]")
+        self.declare_parameter("search_pose_wait_sec", 1.0)
         self.declare_parameter("robot_ip", self.DEFAULT_ROBOT_IP)
 
         self.approach_topic = str(self.get_parameter("approach_topic").value)
@@ -140,6 +154,28 @@ class PickMoveItExecutorNode(Node):
         self.dice_repick_wait_sec = max(
             float(self.get_parameter("dice_repick_wait_sec").value), 0.0
         )
+        self.search_start_joint_positions_deg = self._parse_joint_positions_deg(
+            self.get_parameter("search_start_joint_positions_deg").value,
+            "search_start_joint_positions_deg",
+        )
+        self.search_start_joint_positions_rad = [
+            math.radians(value) for value in self.search_start_joint_positions_deg
+        ]
+        self.search_look_offsets_deg = self._parse_joint_position_sets_deg(
+            self.get_parameter("search_look_offsets_deg").value,
+            "search_look_offsets_deg",
+        )
+        self.search_joint_positions_deg = self._parse_joint_position_sets_deg(
+            self.get_parameter("search_joint_positions_deg").value,
+            "search_joint_positions_deg",
+        )
+        self.search_joint_positions_rad = [
+            [math.radians(value) for value in joint_positions]
+            for joint_positions in self.search_joint_positions_deg
+        ]
+        self.search_pose_wait_sec = max(
+            float(self.get_parameter("search_pose_wait_sec").value), 0.0
+        )
 
         self.callback_group = ReentrantCallbackGroup()
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
@@ -192,6 +228,12 @@ class PickMoveItExecutorNode(Node):
             Trigger,
             "~/execute_pick",
             self._handle_execute_pick,
+            callback_group=self.callback_group,
+        )
+        self.create_service(
+            Trigger,
+            "~/search_workspace",
+            self._handle_search_workspace,
             callback_group=self.callback_group,
         )
         self.create_service(
@@ -268,9 +310,9 @@ class PickMoveItExecutorNode(Node):
         )
         self.get_logger().info(
             "Services: ~/execute_approach, ~/execute_centered_approach, "
-            "~/execute_grasp, ~/execute_pick, ~/run_dice_test, ~/stop_dice_test, "
-            "~/move_to_ready_pose, ~/move_to_start_pose, ~/open_gripper, "
-            "~/close_gripper"
+            "~/execute_grasp, ~/execute_pick, ~/search_workspace, "
+            "~/run_dice_test, ~/stop_dice_test, ~/move_to_ready_pose, "
+            "~/move_to_start_pose, ~/open_gripper, ~/close_gripper"
         )
         self.get_logger().info(
             f"Using MoveIt group {self.GROUP_NAME} from {self.BASE_LINK_NAME} "
@@ -286,6 +328,14 @@ class PickMoveItExecutorNode(Node):
             f"Dice re-pick joint targets (deg): {self.dice_repick_joint_positions_deg}"
         )
         self.get_logger().info(f"Dice re-pick wait: {self.dice_repick_wait_sec:.2f} s")
+        self.get_logger().info(
+            f"Search start joint targets (deg): {self.search_start_joint_positions_deg}"
+        )
+        self.get_logger().info(
+            f"Search look offsets: {len(self.search_look_offsets_deg)}; "
+            f"extra search poses: {len(self.search_joint_positions_deg)}; "
+            f"wait per pose: {self.search_pose_wait_sec:.2f} s"
+        )
         self.get_logger().info(
             f"Approach-to-grasp wait: {self.approach_to_grasp_wait_sec:.2f} s"
         )
@@ -330,6 +380,55 @@ class PickMoveItExecutorNode(Node):
             )
 
         return joint_positions
+
+    def _parse_joint_position_sets_deg(
+        self, value, parameter_name: str
+    ) -> list[list[float]]:
+        if isinstance(value, str):
+            if not value.strip():
+                return []
+            try:
+                parsed_value = ast.literal_eval(value)
+            except (SyntaxError, ValueError) as exc:
+                raise ValueError(
+                    f"{parameter_name} must be a list string like "
+                    '"[[-80.0, -105.0, 0.0, -163.0, 90.0, 190.0]]".'
+                ) from exc
+        else:
+            parsed_value = value
+
+        if parsed_value is None or parsed_value == []:
+            return []
+        if not isinstance(parsed_value, (list, tuple)):
+            raise ValueError(f"{parameter_name} must contain joint target lists.")
+
+        expected_joint_count = len(ur.joint_names(prefix=""))
+        if len(parsed_value) == expected_joint_count and all(
+            isinstance(item, (int, float)) for item in parsed_value
+        ):
+            return [
+                self._parse_joint_positions_deg(
+                    parsed_value,
+                    parameter_name,
+                )
+            ]
+
+        joint_position_sets: list[list[float]] = []
+        for index, item in enumerate(parsed_value):
+            try:
+                joint_position_sets.append(
+                    self._parse_joint_positions_deg(
+                        item,
+                        f"{parameter_name}[{index}]",
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{parameter_name}[{index}] must contain "
+                    f"{expected_joint_count} joint values."
+                ) from exc
+
+        return joint_position_sets
 
     def _on_approach_pose(self, msg: PoseStamped) -> None:
         if self._motion_active_depth > 0:
@@ -1114,6 +1213,101 @@ end
 
         return None, None, f"No updated pick pose received {reason}."
 
+    def _wait_for_search_target(
+        self, min_received_ns: int, label: str
+    ) -> tuple[bool, str]:
+        wait_sec = self.search_pose_wait_sec
+        if wait_sec > 0.0:
+            self._publish_status(
+                f"Search workspace: waiting {wait_sec:.2f}s at {label}."
+            )
+
+        deadline = time.monotonic() + wait_sec
+        while True:
+            if (
+                self.latest_approach_received_ns is not None
+                and self.latest_grasp_received_ns is not None
+                and self.latest_approach_received_ns > min_received_ns
+                and self.latest_grasp_received_ns > min_received_ns
+            ):
+                approach_pose, grasp_pose, error_message = (
+                    self._get_fresh_pick_pose_snapshot()
+                )
+                if approach_pose is not None and grasp_pose is not None:
+                    return True, f"Target found from {label}."
+                return False, error_message
+
+            if wait_sec <= 0.0 or time.monotonic() >= deadline:
+                break
+
+            remaining_sec = deadline - time.monotonic()
+            if remaining_sec <= 0.0:
+                break
+            time.sleep(min(self.EXECUTION_POLL_INTERVAL_SEC, remaining_sec))
+
+        return False, f"No target found from {label}."
+
+    def _search_workspace(self) -> tuple[bool, str]:
+        search_targets = [
+            (
+                "search start pose",
+                self.search_start_joint_positions_rad,
+                self.search_start_joint_positions_deg,
+            )
+        ]
+        for index, offset_deg in enumerate(self.search_look_offsets_deg, start=1):
+            joint_positions_deg = [
+                start_value + offset_value
+                for start_value, offset_value in zip(
+                    self.search_start_joint_positions_deg,
+                    offset_deg,
+                    strict=True,
+                )
+            ]
+            search_targets.append(
+                (
+                    f"search look {index}",
+                    [math.radians(value) for value in joint_positions_deg],
+                    joint_positions_deg,
+                )
+            )
+
+        for index, (joint_positions_rad, joint_positions_deg) in enumerate(
+            zip(
+                self.search_joint_positions_rad,
+                self.search_joint_positions_deg,
+                strict=True,
+            ),
+            start=1,
+        ):
+            search_targets.append(
+                (
+                    f"search pose {index}",
+                    joint_positions_rad,
+                    joint_positions_deg,
+                )
+            )
+
+        last_message = "No target found during workspace search."
+        for label, joint_positions_rad, joint_positions_deg in search_targets:
+            before_move_ns = self.get_clock().now().nanoseconds
+            ok, message = self._execute_joint_configuration(
+                label,
+                joint_positions_rad,
+                joint_positions_deg,
+            )
+            if not ok:
+                return False, f"Workspace search failed moving to {label}: {message}"
+
+            ok, message = self._wait_for_search_target(before_move_ns, label)
+            if ok:
+                self._publish_status(message)
+                return True, message
+            last_message = message
+
+        self._publish_status(last_message)
+        return False, last_message
+
     def _pre_grasp_z(
         self, approach_pose: PoseStamped, grasp_pose: PoseStamped
     ) -> float:
@@ -1319,15 +1513,11 @@ end
                     f"Dice test stopped opening gripper: {message}",
                 )
 
-            ok, message = self._execute_joint_configuration(
-                "dice pick-again pose",
-                self.dice_repick_joint_positions_rad,
-                self.dice_repick_joint_positions_deg,
-            )
+            ok, message = self._search_workspace()
             if not ok:
                 return (
                     False,
-                    f"Dice test stopped moving to pick-again pose: {message}",
+                    f"Dice test stopped during workspace search: {message}",
                 )
 
             if self.dice_repick_wait_sec > 0.0:
@@ -1362,6 +1552,11 @@ end
     def _handle_execute_pick(self, request, response):
         del request
         response.success, response.message = self._execute_pick_pipeline()
+        return response
+
+    def _handle_search_workspace(self, request, response):
+        del request
+        response.success, response.message = self._search_workspace()
         return response
 
     def _handle_run_dice_test(self, request, response):

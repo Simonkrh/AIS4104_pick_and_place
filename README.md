@@ -69,7 +69,6 @@ colcon build --symlink-install
 source /opt/ros/jazzy/setup.bash
 cd "$WORKSPACE"
 source install/setup.bash
-cd src/AIS4104_pick_and_place
 ```
 
 ## Camera Topics
@@ -129,15 +128,6 @@ ros2 launch ./launch/pick_and_place.launch.py \
   robot_ip:=192.168.0.100
 ```
 
-Use other camera topics:
-
-```bash
-ros2 launch ./launch/pick_and_place.launch.py \
-  image_topic:=/my_camera/color/image_raw \
-  depth_topic:=/my_camera/aligned_depth_to_color/image_raw \
-  camera_info_topic:=/my_camera/color/camera_info
-```
-
 Start a local RealSense camera from this launch:
 
 ```bash
@@ -176,6 +166,12 @@ Move to the current approach pose, then reacquire the target, then recenter the 
 
 ```bash
 ros2 service call /pick_moveit_executor_node/execute_centered_approach std_srvs/srv/Trigger "{}"
+```
+
+Move the camera to the search-start pose, point it around with small wrist offsets, then try any configured extra search poses:
+
+```bash
+ros2 service call /pick_moveit_executor_node/search_workspace std_srvs/srv/Trigger "{}"
 ```
 
 Move to the current grasp pose:
@@ -261,18 +257,21 @@ ros2 launch ./launch/pick_and_place.launch.py \
   handeye_result_file:=/path/to/handeye_result.json
 ```
 
-## Important Launch Arguments
+## Launch Arguments
 
 - `device`: YOLO device. Use `cpu` or `'"0"'`.
-- `model`: YOLO model path. Default is `models/pick_place_best.pt`.
-- `conf`: YOLO confidence threshold. Default is `0.4`.
-- `robot_ip`: robot IP for gripper URScript commands. Default is `192.168.0.100`.
-- `rviz_config`: RViz file to load.
-- `handeye_result_file`: hand-eye calibration result JSON.
-- `pick_approach_offset_z`: approach height above target. Default is `0.1`.
-- `pick_grasp_offset_z`: grasp height above target. Default is `-0.02`.
-- `pick_pre_grasp_clearance_z`: height above the grasp pose for the grasp-phase move above the object. Default is `0.05`.
-- `pick_tool_yaw`: fixed tool yaw in radians. Default is `3.14159265359`, which flips the camera/gripper to face away from the robot.
-- `pick_approach_camera_offset_x`: camera X offset from `gripper_tcp` in meters, used only to shift the approach pose. Default is `0.0`.
-- `pick_approach_camera_offset_y`: camera Y offset from `gripper_tcp` in meters, used only to shift the approach pose so the camera is above the target. Default is `0.10`.
-- `ready_joint_positions_deg`: ready pose joint angles in degrees.
+- `model`: YOLO model file.
+- `conf`: YOLO confidence threshold.
+- `robot_ip`: robot IP used for gripper commands.
+- `rviz_config`: RViz config to open.
+- `handeye_result_file`: hand-eye calibration result.
+- `pick_approach_offset_z`: how high the approach pose sits above the object.
+- `pick_grasp_offset_z`: how far down the grasp pose is placed.
+- `pick_pre_grasp_clearance_z`: height used before the final straight-down grasp.
+- `pick_tool_yaw`: gripper yaw during picking.
+- `pick_approach_camera_offset_y`: camera-to-gripper Y offset for centering the camera over the object.
+- `ready_joint_positions_deg`: ready pose, in UR joint degrees.
+- `search_start_joint_positions_deg`: first pose for looking over the workspace.
+- `search_look_offsets_deg`: small offsets from the search-start pose for pointing the camera around.
+- `search_joint_positions_deg`: extra full search poses, if the small look-around is not enough.
+- `search_pose_wait_sec`: how long to wait at each search pose for a fresh pick pose.

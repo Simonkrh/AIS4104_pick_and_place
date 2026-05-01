@@ -23,6 +23,11 @@ SERVICES = [
     ),
     ("execute_grasp", "Grasp", "/pick_moveit_executor_node/execute_grasp"),
     ("execute_pick", "Full pick", "/pick_moveit_executor_node/execute_pick"),
+    (
+        "search_workspace",
+        "Search workspace",
+        "/pick_moveit_executor_node/search_workspace",
+    ),
     ("run_dice_test", "Run dice test", "/pick_moveit_executor_node/run_dice_test"),
     ("stop_dice_test", "Stop dice test", "/pick_moveit_executor_node/stop_dice_test"),
 ]

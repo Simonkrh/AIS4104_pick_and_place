@@ -10,6 +10,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -105,35 +106,48 @@ def generate_launch_description():
                 "pick_tool_yaw",
                 default_value="3.14159265359",
                 description=(
-                    "Fixed pick yaw in radians. pi flips the camera/gripper "
-                    "to face away from the robot instead of toward it."
-                ),
-            ),
-            DeclareLaunchArgument(
-                "pick_approach_camera_offset_x",
-                default_value="0.0",
-                description=(
-                    "Camera X offset from gripper_tcp in meters, used only "
-                    "to shift the approach pose so the camera is above the target."
+                    "Tool yaw for picking. pi points the gripper the usual way here."
                 ),
             ),
             DeclareLaunchArgument(
                 "pick_approach_camera_offset_y",
                 default_value="0.10",
                 description=(
-                    "Camera Y offset from gripper_tcp in meters, used only "
-                    "to shift the approach pose so the camera is above the target."
+                    "Camera-to-gripper Y offset for centering above the object."
                 ),
             ),
             DeclareLaunchArgument("robot_ip", default_value="192.168.0.100"),
             DeclareLaunchArgument(
                 "ready_joint_positions_deg",
                 default_value="[-90.0, -90.0, 0.0, -180.0, 90.0, 180.0]",
+                description="Ready pose, in UR joint degrees.",
+            ),
+            DeclareLaunchArgument(
+                "search_start_joint_positions_deg",
+                default_value="[-80.0, -105.0, 0.0, -163.0, 90.0, 190.0]",
+                description="First pose for looking over the workspace.",
+            ),
+            DeclareLaunchArgument(
+                "search_joint_positions_deg",
+                default_value="[]",
                 description=(
-                    "Fixed UR joint target in degrees ordered as "
-                    "[shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3]."
+                    "Extra full search poses, if the small look-around is not enough."
                 ),
             ),
+            DeclareLaunchArgument(
+                "search_look_offsets_deg",
+                default_value=(
+                    "[[0.0, 0.0, 0.0, 5.0, 10.0, 0.0], "
+                    "[0.0, 0.0, 0.0, 5.0, -8.0, 0.0], "
+                    "[0.0, 0.0, 0.0, 10.0, 0.0, 0.0], "
+                    "[0.0, -6.0, 0.0, -15.0, -4.0, 6.0], "
+                    "[0.0, 0.0, 0.0, -10.0, 14.0, -6.0]]"
+                ),
+                description=(
+                    "Small offsets from the search-start pose for pointing the camera."
+                ),
+            ),
+            DeclareLaunchArgument("search_pose_wait_sec", default_value="1.0"),
             OpaqueFunction(function=_maybe_launch_realsense),
             Node(
                 package="yolo_detector",
@@ -200,11 +214,6 @@ def generate_launch_description():
                     },
                     {"tool_yaw": LaunchConfiguration("pick_tool_yaw")},
                     {
-                        "approach_camera_offset_x": LaunchConfiguration(
-                            "pick_approach_camera_offset_x"
-                        )
-                    },
-                    {
                         "approach_camera_offset_y": LaunchConfiguration(
                             "pick_approach_camera_offset_y"
                         )
@@ -233,6 +242,28 @@ def generate_launch_description():
                     {
                         "ready_joint_positions_deg": LaunchConfiguration(
                             "ready_joint_positions_deg"
+                        )
+                    },
+                    {
+                        "search_start_joint_positions_deg": LaunchConfiguration(
+                            "search_start_joint_positions_deg"
+                        )
+                    },
+                    {
+                        "search_joint_positions_deg": ParameterValue(
+                            LaunchConfiguration("search_joint_positions_deg"),
+                            value_type=str,
+                        )
+                    },
+                    {
+                        "search_look_offsets_deg": ParameterValue(
+                            LaunchConfiguration("search_look_offsets_deg"),
+                            value_type=str,
+                        )
+                    },
+                    {
+                        "search_pose_wait_sec": LaunchConfiguration(
+                            "search_pose_wait_sec"
                         )
                     },
                     {"robot_ip": LaunchConfiguration("robot_ip")},

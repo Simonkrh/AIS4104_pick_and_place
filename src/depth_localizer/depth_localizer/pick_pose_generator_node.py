@@ -52,7 +52,6 @@ class PickPoseGeneratorNode(Node):
         self.declare_parameter("min_grasp_clearance_z", 0.005)
         self.declare_parameter("tool_roll", math.pi)
         self.declare_parameter("tool_yaw", math.pi)
-        self.declare_parameter("approach_camera_offset_x", 0.0)
         self.declare_parameter("approach_camera_offset_y", 0.10)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
@@ -66,9 +65,6 @@ class PickPoseGeneratorNode(Node):
         )
         self.tool_roll = float(self.get_parameter("tool_roll").value)
         self.tool_yaw = float(self.get_parameter("tool_yaw").value)
-        self.approach_camera_offset_x = float(
-            self.get_parameter("approach_camera_offset_x").value
-        )
         self.approach_camera_offset_y = float(
             self.get_parameter("approach_camera_offset_y").value
         )
@@ -144,8 +140,7 @@ class PickPoseGeneratorNode(Node):
             min_grasp_z = self.table_top_z + self.min_grasp_clearance_z
             pose.pose.position.z = max(pose.pose.position.z, min_grasp_z)
         if compensate_camera_offset:
-            offset_x, offset_y = self._rotate_xy_offset_to_pose_frame(
-                self.approach_camera_offset_x,
+            offset_x, offset_y = self._rotate_y_offset_to_pose_frame(
                 self.approach_camera_offset_y,
                 orientation_xyzw,
             )
@@ -157,27 +152,23 @@ class PickPoseGeneratorNode(Node):
         pose.pose.orientation.w = float(orientation_xyzw[3])
         return pose
 
-    def _rotate_xy_offset_to_pose_frame(
+    def _rotate_y_offset_to_pose_frame(
         self,
-        local_x: float,
         local_y: float,
         orientation_xyzw: tuple[float, float, float, float],
     ) -> tuple[float, float]:
         qx, qy, qz, qw = orientation_xyzw
         xx = qx * qx
         xy = qx * qy
-        yy = qy * qy
         zz = qz * qz
         zw = qz * qw
 
-        rot_xx = 1.0 - 2.0 * (yy + zz)
         rot_xy = 2.0 * (xy - zw)
-        rot_yx = 2.0 * (xy + zw)
         rot_yy = 1.0 - 2.0 * (xx + zz)
 
         return (
-            rot_xx * local_x + rot_xy * local_y,
-            rot_yx * local_x + rot_yy * local_y,
+            rot_xy * local_y,
+            rot_yy * local_y,
         )
 
     @staticmethod
