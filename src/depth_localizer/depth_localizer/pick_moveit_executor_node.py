@@ -1203,8 +1203,11 @@ end
         with self._moveit_speed_guard(
             self.grasp_velocity_scaling, self.grasp_acceleration_scaling
         ):
+            pre_grasp_snapshot = self._build_camera_offset_pre_grasp_pose(
+                approach_snapshot, grasp_snapshot
+            )
             grasp_above_candidates = self._build_grasp_above_candidates(
-                approach_snapshot, grasp_snapshot, approach_snapshot
+                pre_grasp_snapshot, grasp_snapshot, approach_snapshot
             )
 
             ok, message, grasp_above_pose = self._execute_grasp_above_candidates(

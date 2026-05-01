@@ -271,6 +271,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
 - `handeye_result_file`: hand-eye calibration result JSON.
 - `pick_approach_offset_z`: approach height above target. Default is `0.1`.
 - `pick_grasp_offset_z`: grasp height above target. Default is `-0.02`.
+- `pick_pre_grasp_clearance_z`: height above the grasp pose for the grasp-phase move above the object. Default is `0.05`.
 - `pick_tool_yaw`: fixed tool yaw in radians. Default is `3.14159265359`, which flips the camera/gripper to face away from the robot.
 - `pick_approach_camera_offset_x`: camera X offset from `gripper_tcp` in meters, used only to shift the approach pose. Default is `0.0`.
 - `pick_approach_camera_offset_y`: camera Y offset from `gripper_tcp` in meters, used only to shift the approach pose so the camera is above the target. Default is `0.10`.
