@@ -46,6 +46,8 @@ class Detection3DNode(Node):
         self.declare_parameter("output_topic", "/yolo/detections_3d")
         self.declare_parameter("depth_scale", 0.001)
         self.declare_parameter("roi_half_size", 2)
+        self.declare_parameter("bbox_depth_roi_scale", 0.60)
+        self.declare_parameter("depth_percentile", 5.0)
         self.declare_parameter("min_depth_m", 0.10)
         self.declare_parameter("max_depth_m", 2.00)
         self.declare_parameter("max_depth_age_sec", 0.75)
@@ -59,6 +61,12 @@ class Detection3DNode(Node):
 
         self.depth_scale = float(self.get_parameter("depth_scale").value)
         self.roi_half_size = int(self.get_parameter("roi_half_size").value)
+        self.bbox_depth_roi_scale = max(
+            float(self.get_parameter("bbox_depth_roi_scale").value), 0.0
+        )
+        self.depth_percentile = min(
+            max(float(self.get_parameter("depth_percentile").value), 0.0), 100.0
+        )
         self.min_depth_m = float(self.get_parameter("min_depth_m").value)
         self.max_depth_m = float(self.get_parameter("max_depth_m").value)
         self.max_depth_age_sec = float(self.get_parameter("max_depth_age_sec").value)
@@ -158,11 +166,19 @@ class Detection3DNode(Node):
             # aligned depth are published at different sizes.
             u = int(round(det.bbox.center.position.x * scale_u))
             v = int(round(det.bbox.center.position.y * scale_v))
+            bbox_half_width = int(
+                round(0.5 * float(det.bbox.size_x) * scale_u * self.bbox_depth_roi_scale)
+            )
+            bbox_half_height = int(
+                round(0.5 * float(det.bbox.size_y) * scale_v * self.bbox_depth_roi_scale)
+            )
+            half_width = max(self.roi_half_size, bbox_half_width)
+            half_height = max(self.roi_half_size, bbox_half_height)
 
-            u0 = max(0, u - self.roi_half_size)
-            u1 = min(width, u + self.roi_half_size + 1)
-            v0 = max(0, v - self.roi_half_size)
-            v1 = min(height, v + self.roi_half_size + 1)
+            u0 = max(0, u - half_width)
+            u1 = min(width, u + half_width + 1)
+            v0 = max(0, v - half_height)
+            v1 = min(height, v + half_height + 1)
             if u0 >= u1 or v0 >= v1:
                 continue
 
@@ -171,7 +187,7 @@ class Detection3DNode(Node):
             if depth_values_m.size == 0:
                 continue
 
-            z = float(np.median(depth_values_m))
+            z = float(np.percentile(depth_values_m, self.depth_percentile))
             if not (self.min_depth_m <= z <= self.max_depth_m):
                 continue
 

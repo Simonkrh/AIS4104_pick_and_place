@@ -68,6 +68,8 @@ class Detection3DTransformNode(Node):
 
         self.declare_parameter("target_class", "")
         self.declare_parameter("min_score", 0.0)
+        self.declare_parameter("min_transformed_z", -0.05)
+        self.declare_parameter("max_transformed_z", 0.30)
         self.declare_parameter("best_pose_topic", "/pick_target_pose")
         self.declare_parameter("best_tf_child_frame", "detected_object")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
@@ -87,6 +89,8 @@ class Detection3DTransformNode(Node):
 
         self.target_class = str(self.get_parameter("target_class").value).strip()
         self.min_score = float(self.get_parameter("min_score").value)
+        self.min_transformed_z = float(self.get_parameter("min_transformed_z").value)
+        self.max_transformed_z = float(self.get_parameter("max_transformed_z").value)
         self.best_pose_topic = str(self.get_parameter("best_pose_topic").value).strip()
         self.best_tf_child_frame = str(
             self.get_parameter("best_tf_child_frame").value
@@ -369,6 +373,9 @@ class Detection3DTransformNode(Node):
 
             if transform is not None:
                 x, y, z = self._transform_point(transform, x, y, z)
+
+            if not (self.min_transformed_z <= z <= self.max_transformed_z):
+                continue
 
             det_out = Detection3D()
             det_out.header.stamp = publish_stamp
