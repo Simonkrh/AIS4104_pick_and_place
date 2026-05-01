@@ -1193,6 +1193,11 @@ end
         if wait_sec > 0.0:
             self._publish_status(f"Waiting {wait_sec:.2f}s {reason}.")
 
+        latest_snapshot: tuple[Optional[PoseStamped], Optional[PoseStamped], str] = (
+            None,
+            None,
+            "",
+        )
         deadline = time.monotonic() + wait_sec
         while True:
             if (
@@ -1201,7 +1206,9 @@ end
                 and self.latest_approach_received_ns > min_received_ns
                 and self.latest_grasp_received_ns > min_received_ns
             ):
-                return self._get_fresh_pick_pose_snapshot()
+                latest_snapshot = self._get_fresh_pick_pose_snapshot()
+                if wait_sec <= 0.0:
+                    return latest_snapshot
 
             if wait_sec <= 0.0 or time.monotonic() >= deadline:
                 break
@@ -1210,6 +1217,9 @@ end
             if remaining_sec <= 0.0:
                 break
             time.sleep(min(self.EXECUTION_POLL_INTERVAL_SEC, remaining_sec))
+
+        if latest_snapshot[0] is not None and latest_snapshot[1] is not None:
+            return latest_snapshot
 
         return None, None, f"No updated pick pose received {reason}."
 
