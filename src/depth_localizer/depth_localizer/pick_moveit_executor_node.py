@@ -264,14 +264,8 @@ class PickMoveItExecutorNode(Node):
         )
         self.create_service(
             Trigger,
-            "~/move_to_ready_pose",
-            self._handle_move_to_ready_pose,
-            callback_group=self.callback_group,
-        )
-        self.create_service(
-            Trigger,
             "~/move_to_start_pose",
-            self._handle_move_to_ready_pose,
+            self._handle_move_to_start_pose,
             callback_group=self.callback_group,
         )
         self.create_service(
@@ -328,8 +322,8 @@ class PickMoveItExecutorNode(Node):
         self.get_logger().info(
             "Services: ~/execute_approach, ~/execute_centered_approach, "
             "~/execute_grasp, ~/execute_pick, ~/search_workspace, "
-            "~/run_dice_test, ~/stop_dice_test, ~/move_to_ready_pose, "
-            "~/move_to_start_pose, ~/open_gripper, ~/close_gripper"
+            "~/run_dice_test, ~/stop_dice_test, ~/move_to_start_pose, "
+            "~/open_gripper, ~/close_gripper"
         )
         self.get_logger().info(
             f"Using MoveIt group {self.GROUP_NAME} from {self.BASE_LINK_NAME} "
@@ -1638,10 +1632,10 @@ end
         response.message = "Dice test stopping. waiting for current step to finish."
         return response
 
-    def _handle_move_to_ready_pose(self, request, response):
+    def _handle_move_to_start_pose(self, request, response):
         del request
         response.success, response.message = self._execute_joint_configuration(
-            "ready pose",
+            "start pose",
             self.ready_joint_positions_rad,
             self.ready_joint_positions_deg,
         )
