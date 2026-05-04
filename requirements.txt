@@ -1,3 +1,4 @@
+# Pinned to the versions used during project testing.
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 numpy==1.26.4
