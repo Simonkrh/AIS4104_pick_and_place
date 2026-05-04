@@ -293,6 +293,7 @@ def generate_launch_description():
                 launch_arguments={
                     "launch_rviz": LaunchConfiguration("moveit_launch_rviz"),
                     "rviz_config": LaunchConfiguration("rviz_config"),
+                    "robot_ip": LaunchConfiguration("robot_ip"),
                 }.items(),
             ),
             Node(

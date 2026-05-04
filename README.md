@@ -259,6 +259,12 @@ ros2 launch ./launch/pick_and_place.launch.py \
 
 ## Launch Arguments
 
+- `use_realsense`: start a local RealSense camera from this launch.
+- `launch_moveit`: start MoveIt together with the pick-and-place nodes.
+- `moveit_launch_rviz`: start RViz from the MoveIt launch.
+- `image_topic`: RGB image topic used by YOLO and OpenCV.
+- `depth_topic`: aligned depth image topic used for 3D localization.
+- `camera_info_topic`: camera info topic used for camera intrinsics.
 - `device`: YOLO device. Use `cpu` or `'"0"'`.
 - `model`: YOLO model file.
 - `conf`: YOLO confidence threshold.
@@ -268,6 +274,8 @@ ros2 launch ./launch/pick_and_place.launch.py \
 - `pick_approach_offset_z`: how high the approach pose sits above the object.
 - `pick_grasp_offset_z`: how far down the grasp pose is placed.
 - `pick_pre_grasp_clearance_z`: height used before the final straight-down grasp.
+- `pick_grasp_velocity_scaling`: velocity scaling used during the final grasp motion.
+- `pick_grasp_acceleration_scaling`: acceleration scaling used during the final grasp motion.
 - `pick_tool_yaw`: gripper yaw during picking.
 - `pick_approach_camera_offset_y`: camera-to-gripper Y offset for centering the camera over the object.
 - `ready_joint_positions_deg`: ready pose, in UR joint degrees.
