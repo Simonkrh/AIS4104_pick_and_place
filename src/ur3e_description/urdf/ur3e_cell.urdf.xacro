@@ -43,11 +43,24 @@
   <xacro:arg name="initial_positions_file"
     default="$(find ur_description)/config/initial_positions.yaml" />
 
+  <xacro:property name="table_thickness" value="0.04" />
+  <xacro:property name="robot_platform_height" value="0.0165" />
+  <xacro:property name="robot_platform_size_x" value="0.45" />
+  <xacro:property name="robot_platform_size_y" value="0.25" />
+
   <link name="world" />
   <link name="table">
+    <visual>
+      <geometry>
+        <box size="1.0 1.0 ${table_thickness}" />
+      </geometry>
+      <material name="table_gray">
+        <color rgba="0.45 0.45 0.45 1.0" />
+      </material>
+    </visual>
     <collision>
       <geometry>
-        <box size="1.0 1.0 0.04" />
+        <box size="1.0 1.0 ${table_thickness}" />
       </geometry>
     </collision>
   </link>
@@ -55,7 +68,29 @@
   <joint name="world-table" type="fixed">
     <parent link="world" />
     <child link="table" />
-    <origin xyz="0 0 -0.03" rpy="0 0 0" />
+    <origin xyz="0 0 ${-robot_platform_height - table_thickness * 0.5}" rpy="0 0 0" />
+  </joint>
+
+  <link name="robot_platform">
+    <visual>
+      <geometry>
+        <box size="${robot_platform_size_x} ${robot_platform_size_y} ${robot_platform_height}" />
+      </geometry>
+      <material name="platform_black">
+        <color rgba="0.08 0.08 0.08 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${robot_platform_size_x} ${robot_platform_size_y} ${robot_platform_height}" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="world-robot_platform" type="fixed">
+    <parent link="world" />
+    <child link="robot_platform" />
+    <origin xyz="0 0 ${-robot_platform_height * 0.5}" rpy="0 0 0" />
   </joint>
 
   <xacro:ur_robot
