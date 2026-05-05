@@ -137,7 +137,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
 
 ## Useful Services
 
-You can also open a small button panel for the common services, including dice test start/stop:
+You can also open a small button panel for the common services, including dice test and sorting start/stop:
 
 ```bash
 python3 tools/pick_service_panel.py
@@ -180,10 +180,24 @@ Move to the current grasp pose:
 ros2 service call /pick_moveit_executor_node/execute_grasp std_srvs/srv/Trigger "{}"
 ```
 
-Run open gripper, approach, grasp, and close gripper as one command:
+Run open gripper, centered approach, pose reacquire, grasp, close gripper, and lift as one command:
 
 ```bash
 ros2 service call /pick_moveit_executor_node/execute_pick std_srvs/srv/Trigger "{}"
+```
+
+Run or stop the dice test loop:
+
+```bash
+ros2 service call /pick_moveit_executor_node/run_dice_test std_srvs/srv/Trigger "{}"
+ros2 service call /pick_moveit_executor_node/stop_dice_test std_srvs/srv/Trigger "{}"
+```
+
+Run or stop the sorting loop:
+
+```bash
+ros2 service call /pick_moveit_executor_node/run_sorting std_srvs/srv/Trigger "{}"
+ros2 service call /pick_moveit_executor_node/stop_sorting std_srvs/srv/Trigger "{}"
 ```
 
 There is also a small helper script for the ready/start pose:
@@ -273,11 +287,14 @@ ros2 launch ./launch/pick_and_place.launch.py \
 - `handeye_result_file`: hand-eye calibration result.
 - `pick_approach_offset_z`: how high the approach pose sits above the object.
 - `pick_grasp_offset_z`: how far down the grasp pose is placed.
+- `pick_table_top_z`: measured table height in the base frame.
+- `pick_min_grasp_clearance_z`: minimum allowed grasp height above the table.
 - `pick_pre_grasp_clearance_z`: height used before the final straight-down grasp.
 - `pick_grasp_velocity_scaling`: velocity scaling used during the final grasp motion.
 - `pick_grasp_acceleration_scaling`: acceleration scaling used during the final grasp motion.
 - `pick_tool_yaw`: gripper yaw during picking.
 - `pick_approach_camera_offset_y`: camera-to-gripper Y offset for centering the camera over the object.
+- `prefer_elbow_up_ik`: try to keep the robot elbow up during approach and grasp moves.
 - `ready_joint_positions_deg`: ready pose, in UR joint degrees.
 - `search_start_joint_positions_deg`: first pose for looking over the workspace.
 - `search_look_offsets_deg`: small offsets from the search-start pose for pointing the camera around.
