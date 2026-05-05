@@ -35,7 +35,7 @@ class YoloNode(Node):
 
         if not Path(model_path).exists():
             self.get_logger().warn(
-                f"Model not found at '{model_path}'. Falling back to 'yolov8n.pt'."
+                f"I could not find the model at {model_path}. Using yolov8n.pt instead."
             )
             model_path = "yolov8n.pt"
 
@@ -48,11 +48,11 @@ class YoloNode(Node):
         self.pub_img = self.create_publisher(ImageMsg, "/yolo/image_annotated", 10)
 
         self.get_logger().info(
-            f"YOLO model={model_path}, conf={self.conf}, device={self.device}"
+            f"YOLO is ready with model {model_path}, confidence {self.conf}, device {self.device}."
         )
-        self.get_logger().info(f"Subscribing to: {image_topic}")
-        self.get_logger().info("Publishing detections on: /yolo/detections")
-        self.get_logger().info("Publishing annotated image on: /yolo/image_annotated")
+        self.get_logger().info(f"Reading images from {image_topic}.")
+        self.get_logger().info("Publishing YOLO detections.")
+        self.get_logger().info("Publishing the annotated YOLO image.")
 
     @staticmethod
     def _wrap_half_turn(theta_rad: float) -> float:

@@ -198,27 +198,28 @@ def main():
         },
     )
 
-    print(f"Saved result to {output_file}")
-    print(f"Best method: {best_result['method']}")
-    print("tool -> camera_frame:", best_result["tool_T_camera_frame"])
+    print(f"Saved result to {output_file}.")
+    print(f"Best method is {best_result['method']}.")
+    print("Tool to camera frame.")
+    print(best_result["tool_T_camera_frame"])
     print(
-        "target position scatter norm (m):",
+        "Target position scatter norm in meters.",
         round(best_result["validation"]["target_position_std_norm_m"], 6),
     )
     print(
-        "target orientation std (deg):",
+        "Target orientation std in degrees.",
         round(best_result["validation"]["target_orientation_std_deg"], 6),
     )
     report_top = max(0, args.report_top)
     if report_top:
-        print(f"Worst {min(report_top, len(best_sample_ranking))} samples:")
+        print(f"Worst {min(report_top, len(best_sample_ranking))} samples.")
         for rank, sample_error in enumerate(best_sample_ranking[:report_top], start=1):
             print(
-                f"  {rank}. index={sample_error['index']} "
-                f"score={sample_error['ranking_score']:.3f} "
-                f"trans_err_m={sample_error['translation_error_m']:.4f} "
-                f"rot_err_deg={sample_error['orientation_error_deg']:.2f} "
-                f"path={sample_error.get('image_path')}"
+                f"{rank}. Sample {sample_error['index']}. "
+                f"Score {sample_error['ranking_score']:.3f}. "
+                f"Translation error {sample_error['translation_error_m']:.4f} m. "
+                f"Rotation error {sample_error['orientation_error_deg']:.2f} deg. "
+                f"Path {sample_error.get('image_path')}."
             )
 
     prune_worst = max(0, args.prune_worst)
@@ -244,8 +245,8 @@ def main():
             backup_file = sample_file.with_suffix(sample_file.suffix + ".bak")
             save_json(backup_file, payload)
             save_json(sample_file, pruned_payload)
-            print(f"Created backup at {backup_file}")
-            print(f"Pruned {prune_worst} samples in place: {sample_file}")
+            print(f"Created backup at {backup_file}.")
+            print(f"Pruned {prune_worst} samples in place at {sample_file}.")
         else:
             prune_output = (
                 Path(args.prune_output)
@@ -253,9 +254,9 @@ def main():
                 else session_dir / "samples_pruned.json"
             )
             save_json(prune_output, pruned_payload)
-            print(f"Wrote pruned sample file to {prune_output}")
+            print(f"Wrote pruned sample file to {prune_output}.")
         print(
-            "Removed sample indices:",
+            "Removed sample indices.",
             [sample_error["index"] for sample_error in best_sample_ranking[:prune_worst]],
         )
 

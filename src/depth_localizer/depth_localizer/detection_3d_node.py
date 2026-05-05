@@ -118,10 +118,10 @@ class Detection3DNode(Node):
             Detection2DArray, detection_topic, self.on_detection, detection_qos
         )
 
-        self.get_logger().info(f"Subscribing detections: {detection_topic}")
-        self.get_logger().info(f"Subscribing depth: {depth_topic}")
-        self.get_logger().info(f"Subscribing camera info: {camera_info_topic}")
-        self.get_logger().info(f"Publishing 3D detections: {output_topic}")
+        self.get_logger().info(f"Reading detections from {detection_topic}.")
+        self.get_logger().info(f"Reading depth from {depth_topic}.")
+        self.get_logger().info(f"Reading camera info from {camera_info_topic}.")
+        self.get_logger().info(f"Publishing 3D detections on {output_topic}.")
 
     def on_camera_info(self, msg: CameraInfo):
         self.fx = float(msg.k[0])
@@ -134,8 +134,8 @@ class Detection3DNode(Node):
         if not self._logged_first_camera_info:
             self._logged_first_camera_info = True
             self.get_logger().info(
-                "Received first camera info on "
-                f"{self.camera_info_topic} ({msg.width}x{msg.height}, frame_id={msg.header.frame_id or '<empty>'})"
+                "Got the first camera info message on "
+                f"{self.camera_info_topic}. Size {msg.width} by {msg.height}. Frame {msg.header.frame_id or 'empty'}."
             )
 
     def on_depth(self, msg: Image):
@@ -144,8 +144,8 @@ class Detection3DNode(Node):
         if not self._logged_first_depth:
             self._logged_first_depth = True
             self.get_logger().info(
-                "Received first depth frame on "
-                f"{self.depth_topic} ({msg.encoding}, {msg.width}x{msg.height}, frame_id={msg.header.frame_id or '<empty>'})"
+                "Got the first depth frame on "
+                f"{self.depth_topic}. Encoding {msg.encoding}. Size {msg.width} by {msg.height}. Frame {msg.header.frame_id or 'empty'}."
             )
 
     def on_detection(self, det_msg: Detection2DArray):
@@ -271,7 +271,7 @@ class Detection3DNode(Node):
 
         self.pub.publish(out)
         if converted > 0:
-            self.get_logger().debug(f"Published {converted} detections with 3D points")
+            self.get_logger().debug(f"Published {converted} detections with 3D points.")
 
     def _depth_is_fresh(self) -> bool:
         if self.latest_depth_received_ns is None:
@@ -288,12 +288,12 @@ class Detection3DNode(Node):
         self._last_depth_warn_ns = now_ns
         if self.latest_depth_msg is None:
             self.get_logger().warn(
-                f"No depth frame received yet on {self.depth_topic}; skipping 3D localization."
+                f"No depth frame yet on {self.depth_topic}. Skipping 3D localization."
             )
             return
         age_sec = (now_ns - self.latest_depth_received_ns) / 1_000_000_000.0
         self.get_logger().warn(
-            f"Latest depth frame is stale ({age_sec:.2f}s old); skipping 3D localization."
+            f"The latest depth frame is {age_sec:.2f} seconds old. Skipping 3D localization."
         )
 
     def depth_patch_to_meters(self, patch: np.ndarray, encoding: str) -> np.ndarray:

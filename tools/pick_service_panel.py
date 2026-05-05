@@ -30,6 +30,8 @@ SERVICES = [
     ),
     ("run_dice_test", "Run dice test", "/pick_moveit_executor_node/run_dice_test"),
     ("stop_dice_test", "Stop dice test", "/pick_moveit_executor_node/stop_dice_test"),
+    ("run_sorting", "Run sorting", "/pick_moveit_executor_node/run_sorting"),
+    ("stop_sorting", "Stop sorting", "/pick_moveit_executor_node/stop_sorting"),
 ]
 
 
@@ -58,10 +60,10 @@ class PickServicePanel:
         self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
         self.shutting_down = False
 
-        self.status_var = tk.StringVar(value="Waiting for services...")
+        self.status_var = tk.StringVar(value="Waiting for services.")
         self.buttons: dict[str, ttk.Button] = {}
         self._build_ui()
-        self._append_log("Panel ready. Start pick_and_place.launch.py first.")
+        self._append_log("Panel is ready. Start the pick and place launch first.")
         self._poll_events()
         self._refresh_buttons()
 
@@ -122,10 +124,10 @@ class PickServicePanel:
         if key in self.pending:
             return
         if not client.service_is_ready():
-            self._append_log(f"{SERVICES_BY_KEY[key][1]} service is not ready.")
+            self._append_log(f"{SERVICES_BY_KEY[key][1]} is not ready yet.")
             return
 
-        self._append_log(f"Calling {SERVICES_BY_KEY[key][1]}...")
+        self._append_log(f"Calling {SERVICES_BY_KEY[key][1]}.")
         future = client.call_async(Trigger.Request())
         self.pending[key] = future
         future.add_done_callback(
@@ -151,17 +153,21 @@ class PickServicePanel:
                 try:
                     result = payload.result()
                 except Exception as exc:
-                    self._append_log(f"{label} failed: {exc}")
+                    self._append_log(f"{label} had a problem. {exc}")
                 else:
-                    outcome = "OK" if result.success else "FAILED"
-                    message = result.message.strip() or "(no message)"
-                    self._append_log(f"{label}: {outcome} - {message}")
+                    outcome = "Done" if result.success else "Stopped"
+                    message = result.message.strip() or "No message."
+                    self._append_log(f"{label}. {outcome}. {message}")
 
         self._update_buttons()
         self.root.after(100, self._poll_events)
 
     def _update_buttons(self) -> None:
-        dice_running_request = "run_dice_test" in self.pending
+        running_stop_key = ""
+        if "run_dice_test" in self.pending:
+            running_stop_key = "stop_dice_test"
+        if "run_sorting" in self.pending:
+            running_stop_key = "stop_sorting"
         ready_count = 0
 
         for key, _label, _service_name in SERVICES:
@@ -171,13 +177,13 @@ class PickServicePanel:
                 ready_count += 1
 
             disabled = not service_ready or key in self.pending
-            if dice_running_request and key != "stop_dice_test":
+            if running_stop_key and key != running_stop_key:
                 disabled = True
 
             self.buttons[key].configure(state=tk.DISABLED if disabled else tk.NORMAL)
 
         if not self.pending:
-            self.status_var.set(f"{ready_count}/{len(SERVICES)} services ready.")
+            self.status_var.set(f"{ready_count} of {len(SERVICES)} services are ready.")
 
     def _refresh_buttons(self) -> None:
         if self.shutting_down:

@@ -74,8 +74,8 @@ class HandeyeStaticTFPublisher(Node):
         self._timer = None
 
         self.get_logger().info(
-            f"Loaded hand-eye result {self.parent_frame} -> {self.camera_frame} "
-            f"from {result_path}"
+            f"Loaded hand eye result from {result_path}. "
+            f"Parent frame is {self.parent_frame}. Camera frame is {self.camera_frame}."
         )
 
         if self.output_child_frame == self.camera_frame:
@@ -86,8 +86,8 @@ class HandeyeStaticTFPublisher(Node):
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._timer = self.create_timer(0.1, self._publish_composed_transform)
         self.get_logger().info(
-            f"Waiting for TF {self.camera_frame} <- {self.output_child_frame} "
-            "to compose the calibrated hand-eye transform."
+            f"Waiting for TF from {self.output_child_frame} to {self.camera_frame}. "
+            "Then I can publish the calibrated hand eye transform."
         )
 
     def _publish_composed_transform(self) -> None:
@@ -104,7 +104,7 @@ class HandeyeStaticTFPublisher(Node):
         tool_t_child = self.tool_t_camera @ self._matrix_from_transform(transform)
         self._publish_transform(
             tool_t_child,
-            f"composed via TF {self.camera_frame} <- {self.output_child_frame}",
+            f"Composed using TF from {self.output_child_frame} to {self.camera_frame}",
         )
         self._timer.cancel()
 
@@ -126,8 +126,8 @@ class HandeyeStaticTFPublisher(Node):
 
         self._broadcaster.sendTransform(transform)
         self.get_logger().info(
-            f"Published /tf_static: {self.parent_frame} -> {self.output_child_frame} "
-            f"({detail})"
+            f"Published the static TF from {self.parent_frame} to {self.output_child_frame}. "
+            f"{detail}."
         )
 
     @staticmethod

@@ -19,8 +19,8 @@ class OpenCVEdgesNode(Node):
         self.sub = self.create_subscription(Image, image_topic, self.on_image, 10)
         self.pub = self.create_publisher(Image, "/opencv/image_edges", 10)
 
-        self.get_logger().info(f"Subscribing to: {image_topic}")
-        self.get_logger().info("Publishing edges on: /opencv/image_edges")
+        self.get_logger().info(f"Reading images from {image_topic}.")
+        self.get_logger().info("Publishing edge images.")
 
     def on_image(self, msg: Image):
         try:
@@ -33,7 +33,7 @@ class OpenCVEdgesNode(Node):
             out.header = msg.header
             self.pub.publish(out)
         except Exception as exc:
-            self.get_logger().error(f"OpenCV processing failed: {exc}")
+            self.get_logger().error(f"OpenCV could not process this image. {exc}")
 
 
 def main():

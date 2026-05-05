@@ -122,10 +122,9 @@ class SampleCollector(Node):
             self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)
         elif config.board_cols % 2 == 0 and config.board_rows % 2 == 0:
             self.get_logger().warn(
-                "The configured checkerboard has even-by-even inner corners "
-                f"({config.board_cols}x{config.board_rows}). Plain chessboards with this "
-                "geometry are prone to corner-order ambiguity, which can create large "
-                "180-degree-like pose flips even when detections look visually correct."
+                "The checkerboard has even by even inner corners. "
+                f"It is {config.board_cols} by {config.board_rows}. "
+                "This can make the board pose flip even when the image looks right."
             )
 
         self.create_subscription(Image, config.image_topic, self.on_image, 10)
@@ -243,7 +242,7 @@ class SampleCollector(Node):
         try:
             bgr = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as exc:
-            self.get_logger().error(f"Image conversion failed: {exc}")
+            self.get_logger().error(f"I could not convert the image. {exc}")
             return
 
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
@@ -546,7 +545,7 @@ class SampleCollector(Node):
 
                 if age > 0:
                     self.get_logger().info(
-                        f"Using a recent frame {age} image(s) older than the live preview "
+                        f"Using a recent frame {age} images older than the live preview "
                         "to match TF at the exact image timestamp."
                     )
                 return frame, base_t_tool, tf_lookup, ""
@@ -558,10 +557,10 @@ class SampleCollector(Node):
 
     def save_current_sample(self):
         if not self.recent_frames:
-            self.get_logger().warn("No image received yet.")
+            self.get_logger().warn("No image has arrived yet.")
             return
         if self.camera_matrix is None or self.dist_coeffs is None:
-            self.get_logger().warn("No camera_info received yet.")
+            self.get_logger().warn("No camera info has arrived yet.")
             return
         selected_frame, selected_base_t_tool, selected_tf_lookup, last_rejection = (
             self.select_frame_for_save()
@@ -569,7 +568,7 @@ class SampleCollector(Node):
 
         if selected_frame is None:
             if last_rejection:
-                self.get_logger().warn(f"Sample rejected: {last_rejection}")
+                self.get_logger().warn(f"Sample was skipped. {last_rejection}")
             else:
                 self.get_logger().warn(
                     "Checkerboard not found in any recent frame. Hold the board steady "
@@ -585,7 +584,7 @@ class SampleCollector(Node):
             flags=cv2.SOLVEPNP_ITERATIVE,
         )
         if not solved:
-            self.get_logger().warn("solvePnP failed for this sample.")
+            self.get_logger().warn("Could not solve the pose for this sample.")
             return
 
         sample_index = (
@@ -688,17 +687,17 @@ class SampleCollector(Node):
         deltas = [abs(item["delta_ms"]) for item in rows]
 
         print()
-        print("TF timing summary:")
-        print(f"  samples_with_tf_lookup: {len(rows)}")
-        print(f"  max_abs_delta_ms: {max(deltas):.3f}")
-        print(f"  mean_abs_delta_ms: {sum(deltas) / len(deltas):.3f}")
-        print("  worst_samples:")
+        print("TF timing summary.")
+        print(f"Samples with TF lookup. {len(rows)}")
+        print(f"Max absolute delta in ms. {max(deltas):.3f}")
+        print(f"Mean absolute delta in ms. {sum(deltas) / len(deltas):.3f}")
+        print("Worst samples.")
         for row in rows[:5]:
             print(
-                f"    index={row['index']} "
-                f"delta_ms={row['delta_ms']:.3f} "
-                f"used_latest_tf={row['used_latest_tf']} "
-                f"path={row['image_path']}"
+                f"Sample {row['index']}. "
+                f"Delta ms {row['delta_ms']:.3f}. "
+                f"Used latest TF {row['used_latest_tf']}. "
+                f"Path {row['image_path']}."
             )
 
 
@@ -798,8 +797,8 @@ def main():
     )
 
     try:
-        print("Move the robot to a stable pose, then press 's' to save a sample.")
-        print("Press 'q' to finish collecting.")
+        print("Move the robot to a stable pose, then press s to save a sample.")
+        print("Press q to finish collecting.")
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=0.05)
             cv2.imshow(config.preview_window, node.get_preview_image())

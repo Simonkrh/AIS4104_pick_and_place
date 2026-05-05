@@ -115,21 +115,21 @@ def main():
     if not cv2.imwrite(str(output), image):
         raise SystemExit(f"Failed to write board image to {output}")
 
-    print(f"Saved ChArUco board to {output}")
-    print(f"Squares: {args.squares_x} x {args.squares_y}")
-    print(f"Square length: {args.square_length_mm:.2f} mm")
-    print(f"Marker length: {args.marker_length_mm:.2f} mm")
-    print(f"Dictionary: {args.dictionary}")
+    print(f"Saved ChArUco board to {output}.")
+    print(f"Squares are {args.squares_x} by {args.squares_y}.")
+    print(f"Square length is {args.square_length_mm:.2f} mm.")
+    print(f"Marker length is {args.marker_length_mm:.2f} mm.")
+    print(f"Dictionary is {args.dictionary}.")
     print(
-        "Board size (without margin): "
-        f"{board_width_mm:.1f} mm x {board_height_mm:.1f} mm"
+        "Board size without margin is "
+        f"{board_width_mm:.1f} mm by {board_height_mm:.1f} mm."
     )
     print(
-        "Canvas size (with margin): "
-        f"{total_width_mm:.1f} mm x {total_height_mm:.1f} mm"
+        "Canvas size with margin is "
+        f"{total_width_mm:.1f} mm by {total_height_mm:.1f} mm."
     )
-    print(f"Raster size: {image_size[0]} px x {image_size[1]} px @ {args.dpi} DPI")
-    print("Print at 100% scale with no page scaling.")
+    print(f"Raster size is {image_size[0]} px by {image_size[1]} px at {args.dpi} DPI.")
+    print("Print at 100 percent scale with no page scaling.")
 
 
 if __name__ == "__main__":

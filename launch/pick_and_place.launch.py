@@ -85,12 +85,12 @@ def generate_launch_description():
             DeclareLaunchArgument("depth_center_min_valid_pixels", default_value="8"),
             DeclareLaunchArgument("depth_fallback_roi_scale", default_value="0.80"),
             DeclareLaunchArgument("depth_fallback_percentile", default_value="10.0"),
-            DeclareLaunchArgument("best_pose_filter_window_size", default_value="5"),
+            DeclareLaunchArgument("best_pose_filter_window_size", default_value="1"),
             DeclareLaunchArgument(
                 "best_pose_jump_rejection_distance", default_value="0.03"
             ),
             DeclareLaunchArgument(
-                "best_pose_jump_rejection_hold_sec", default_value="0.5"
+                "best_pose_jump_rejection_hold_sec", default_value="0.0"
             ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
@@ -112,7 +112,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pick_grasp_acceleration_scaling", default_value="0.05"
             ),
-            DeclareLaunchArgument("pick_table_top_z", default_value="-0.015"),
+            DeclareLaunchArgument("prefer_elbow_up_ik", default_value="true"),
+            DeclareLaunchArgument("elbow_up_seed_deg", default_value="90.0"),
+            DeclareLaunchArgument("pick_table_top_z", default_value="-0.0165"),
             DeclareLaunchArgument("pick_min_grasp_clearance_z", default_value="0.01"),
             DeclareLaunchArgument(
                 "pick_tool_yaw",
@@ -151,7 +153,6 @@ def generate_launch_description():
                 default_value=(
                     "[[0.0, 0.0, 0.0, 5.0, 12.0, 0.0], "
                     "[0.0, 0.0, 0.0, 5.0, -10.0, 0.0], "
-                    "[0.0, 0.0, 0.0, 10.0, 0.0, 0.0], "
                     "[0.0, -9.0, 0.0, -17.0, -3.0, 8.0], "
                     "[0.0, 0.0, 0.0, -19.0, 20.0, -6.0]]"
                 ),
@@ -370,6 +371,19 @@ def generate_launch_description():
                             "pick_grasp_acceleration_scaling"
                         )
                     },
+                    {
+                        "prefer_elbow_up_ik": ParameterValue(
+                            LaunchConfiguration("prefer_elbow_up_ik"),
+                            value_type=bool,
+                        )
+                    },
+                    {
+                        "elbow_up_seed_deg": ParameterValue(
+                            LaunchConfiguration("elbow_up_seed_deg"),
+                            value_type=float,
+                        )
+                    },
+                    {"sort_drop_table_top_z": LaunchConfiguration("pick_table_top_z")},
                 ],
             ),
         ]

@@ -48,7 +48,7 @@ class PickPoseGeneratorNode(Node):
         self.declare_parameter("grasp_topic", "/pick_grasp_pose")
         self.declare_parameter("approach_offset_z", 0.35)
         self.declare_parameter("grasp_offset_z", -0.02)
-        self.declare_parameter("table_top_z", -0.01)
+        self.declare_parameter("table_top_z", -0.0165)
         self.declare_parameter("min_grasp_clearance_z", 0.005)
         self.declare_parameter("tool_roll", math.pi)
         self.declare_parameter("tool_yaw", math.pi)
@@ -77,9 +77,9 @@ class PickPoseGeneratorNode(Node):
             PoseStamped, self.input_topic, self.on_target, 10
         )
 
-        self.get_logger().info(f"Subscribing target pose: {self.input_topic}")
-        self.get_logger().info(f"Publishing approach pose: {self.approach_topic}")
-        self.get_logger().info(f"Publishing grasp pose: {self.grasp_topic}")
+        self.get_logger().info(f"Reading target poses from {self.input_topic}.")
+        self.get_logger().info(f"Publishing approach poses on {self.approach_topic}.")
+        self.get_logger().info(f"Publishing grasp poses on {self.grasp_topic}.")
 
     def on_target(self, msg: PoseStamped):
         output_stamp = self.get_clock().now().to_msg()

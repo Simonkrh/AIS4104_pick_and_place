@@ -11,7 +11,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
 
@@ -73,11 +73,12 @@ class Detection3DTransformNode(Node):
         self.declare_parameter("min_transformed_z", -0.05)
         self.declare_parameter("max_transformed_z", 0.30)
         self.declare_parameter("best_pose_topic", "/pick_target_pose")
+        self.declare_parameter("best_class_topic", "/pick_target_class")
         self.declare_parameter("best_tf_child_frame", "detected_object")
         self.declare_parameter("motion_active_topic", "/pick_motion_active")
-        self.declare_parameter("best_pose_filter_window_size", 5)
+        self.declare_parameter("best_pose_filter_window_size", 1)
         self.declare_parameter("best_pose_jump_rejection_distance", 0.03)
-        self.declare_parameter("best_pose_jump_rejection_hold_sec", 0.5)
+        self.declare_parameter("best_pose_jump_rejection_hold_sec", 0.0)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -95,6 +96,9 @@ class Detection3DTransformNode(Node):
         self.min_transformed_z = float(self.get_parameter("min_transformed_z").value)
         self.max_transformed_z = float(self.get_parameter("max_transformed_z").value)
         self.best_pose_topic = str(self.get_parameter("best_pose_topic").value).strip()
+        self.best_class_topic = str(
+            self.get_parameter("best_class_topic").value
+        ).strip()
         self.best_tf_child_frame = str(
             self.get_parameter("best_tf_child_frame").value
         ).strip()
@@ -123,6 +127,11 @@ class Detection3DTransformNode(Node):
             if self.best_pose_topic
             else None
         )
+        self.best_class_pub = (
+            self.create_publisher(String, self.best_class_topic, 10)
+            if self.best_class_topic
+            else None
+        )
 
         self.sub = self.create_subscription(
             Detection3DArray, self.input_topic, self.on_detections, 10
@@ -139,29 +148,31 @@ class Detection3DTransformNode(Node):
         self._pending_best_since_ns: Optional[int] = None
         self._best_position_samples = deque(maxlen=self.best_pose_filter_window_size)
 
-        self.get_logger().info(f"Subscribing detections: {self.input_topic}")
+        self.get_logger().info(f"Reading detections from {self.input_topic}.")
         self.get_logger().info(
-            f"Publishing transformed detections: {self.output_topic}"
+            f"Publishing transformed detections on {self.output_topic}."
         )
-        self.get_logger().info(f"Target frame: {self.target_frame}")
+        self.get_logger().info(f"Using target frame {self.target_frame}.")
         if self.best_pose_pub is not None:
-            self.get_logger().info(f"Publishing best pose: {self.best_pose_topic}")
+            self.get_logger().info(f"Publishing the best pose on {self.best_pose_topic}.")
+        if self.best_class_pub is not None:
+            self.get_logger().info(f"Publishing the best class on {self.best_class_topic}.")
         if self.tf_broadcaster is not None:
             self.get_logger().info(
-                f"Broadcasting TF for best detection: "
-                f"{self.target_frame} -> {self.best_tf_child_frame}"
+                f"Broadcasting TF for the best detection from "
+                f"{self.target_frame} to {self.best_tf_child_frame}."
             )
         self.get_logger().info(
-            f"Subscribing motion active flag: {self.motion_active_topic}"
+            f"Reading the motion active flag from {self.motion_active_topic}."
         )
         self.get_logger().info(
-            "Best pose temporal filter: "
-            f"window={self.best_pose_filter_window_size} samples"
+            "Best pose smoothing is on. "
+            f"Window is {self.best_pose_filter_window_size} samples."
         )
         self.get_logger().info(
-            "Best pose jump rejection: "
-            f"distance={self.best_pose_jump_rejection_distance:.3f} m, "
-            f"hold={self.best_pose_jump_rejection_hold_sec:.2f} s"
+            "Best pose jump rejection is on. "
+            f"Distance is {self.best_pose_jump_rejection_distance:.3f} m, "
+            f"hold time is {self.best_pose_jump_rejection_hold_sec:.2f} s."
         )
 
     def _on_motion_active(self, msg: Bool) -> None:
@@ -260,8 +271,8 @@ class Detection3DTransformNode(Node):
             self._last_stamp_warn_ns = now_ns
             age_sec = (now_ns - _stamp_to_nanoseconds(stamp)) / 1e9
             self.get_logger().warn(
-                f"Incoming detection timestamp is stale by {age_sec:.3f}s; "
-                "using latest TF and current node time for outputs."
+                f"The incoming detection is {age_sec:.3f} seconds old. "
+                "Using the latest TF and the current node time."
             )
 
     def _lookup_target_t_source(
@@ -293,8 +304,8 @@ class Detection3DTransformNode(Node):
                     if now_ns - self._last_tf_warn_ns > 1_000_000_000:
                         self._last_tf_warn_ns = now_ns
                         self.get_logger().warn(
-                            "TF lookup fell back to latest transform instead of "
-                            f"message timestamp. Exact lookup error: {exact_lookup_error}"
+                            "TF lookup used the latest transform instead of the message time. "
+                            f"The exact lookup error was {exact_lookup_error}."
                         )
                 return transform
             except TransformException as exc:
@@ -306,9 +317,9 @@ class Detection3DTransformNode(Node):
         if now_ns - self._last_tf_warn_ns > 1_000_000_000:
             self._last_tf_warn_ns = now_ns
             self.get_logger().warn(
-                f"Could not resolve TF {self.target_frame} <- {source_frame} "
-                f"(allow_latest_tf_fallback={self.allow_latest_tf_fallback}). "
-                f"Last error: {exact_lookup_error}"
+                f"I could not find TF from {source_frame} to {self.target_frame}. "
+                f"Latest TF fallback is {self.allow_latest_tf_fallback}. "
+                f"Last error was {exact_lookup_error}."
             )
         return None
 
@@ -369,7 +380,7 @@ class Detection3DTransformNode(Node):
         source_frame = str(msg.header.frame_id)
         if not source_frame:
             self.get_logger().warn(
-                "Received Detection3DArray with empty header.frame_id"
+                "Got a 3D detection message with no frame id."
             )
             return
 
@@ -477,6 +488,11 @@ class Detection3DTransformNode(Node):
             pose.pose.orientation.w = best_qw
             self.best_pose_pub.publish(pose)
 
+        if self.best_class_pub is not None and best.results:
+            msg_out = String()
+            msg_out.data = str(best.results[0].hypothesis.class_id)
+            self.best_class_pub.publish(msg_out)
+
         if self.tf_broadcaster is not None:
             tf_msg = TransformStamped()
             tf_msg.header.stamp = publish_stamp
@@ -493,7 +509,7 @@ class Detection3DTransformNode(Node):
 
     def _select_best_detection(self, msg: Detection3DArray) -> Optional[Detection3D]:
         best_det = None
-        best_score = float("-inf")
+        best_distance = float("inf")
         for det in msg.detections:
             if not det.results:
                 continue
@@ -504,9 +520,15 @@ class Detection3DTransformNode(Node):
                 continue
             if score < self.min_score:
                 continue
-            if best_det is None or score > best_score:
+            center = det.bbox.center.position
+            distance = math.sqrt(
+                float(center.x) * float(center.x)
+                + float(center.y) * float(center.y)
+                + float(center.z) * float(center.z)
+            )
+            if best_det is None or distance < best_distance:
                 best_det = det
-                best_score = score
+                best_distance = distance
         return best_det
 
 

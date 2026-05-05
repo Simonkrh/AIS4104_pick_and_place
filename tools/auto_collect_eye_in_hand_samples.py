@@ -405,20 +405,20 @@ class AutoCalibrationCollector(SampleCollector):
             callback_group=self.callback_group,
         )
         self.get_logger().info(
-            f"Waiting up to {moveit_wait_sec:.1f}s for MoveIt planning service..."
+            f"Waiting up to {moveit_wait_sec:.1f} seconds for MoveIt planning."
         )
         if not self._plan_client.wait_for_service(timeout_sec=moveit_wait_sec):
-            self.get_logger().warn("MoveIt planning service is not available yet.")
+            self.get_logger().warn("MoveIt planning is not available yet.")
 
         move_action_client = getattr(
             self._moveit, "_MoveIt2__move_action_client", None
         )
         if move_action_client is not None:
             self.get_logger().info(
-                f"Waiting up to {moveit_wait_sec:.1f}s for MoveIt action server..."
+                f"Waiting up to {moveit_wait_sec:.1f} seconds for the MoveIt action server."
             )
             if not move_action_client.wait_for_server(timeout_sec=moveit_wait_sec):
-                self.get_logger().warn("MoveIt action server is not available yet.")
+                self.get_logger().warn("The MoveIt action server is not available yet.")
 
     def wait_for_camera(self, timeout_sec: float) -> bool:
         deadline = time.monotonic() + timeout_sec
@@ -430,7 +430,7 @@ class AutoCalibrationCollector(SampleCollector):
 
     def moveit_ready(self) -> bool:
         if not self._plan_client.service_is_ready():
-            self.get_logger().warn("MoveIt planning service is not available.")
+            self.get_logger().warn("MoveIt planning is not available.")
             return False
 
         move_action_client = getattr(
@@ -440,7 +440,7 @@ class AutoCalibrationCollector(SampleCollector):
             move_action_client is not None
             and not move_action_client.server_is_ready()
         ):
-            self.get_logger().warn("MoveIt action server is not available.")
+            self.get_logger().warn("The MoveIt action server is not available.")
             return False
 
         return True
@@ -452,7 +452,7 @@ class AutoCalibrationCollector(SampleCollector):
             and self.config.allow_latest_tf_fallback
         ):
             self.get_logger().warn(
-                "Using latest TF because exact image-time TF is unavailable. "
+                "Using latest TF because exact image time TF is unavailable. "
                 "This is acceptable for auto capture only after the robot has settled."
             )
             return True, ""
@@ -475,8 +475,8 @@ class AutoCalibrationCollector(SampleCollector):
         quat_xyzw = pose["quaternion_xyzw"]
         self.get_logger().info(
             "Planning calibration move to "
-            f"({position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}) "
-            f"in {frame_id}, target_link={self.move_target_link}"
+            f"{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}. "
+            f"Frame is {frame_id}. Target link is {self.move_target_link}."
         )
 
         try:
@@ -490,7 +490,7 @@ class AutoCalibrationCollector(SampleCollector):
                 cartesian=False,
             )
         except Exception as exc:
-            self.get_logger().warn(f"MoveIt rejected the pose request: {exc}")
+            self.get_logger().warn(f"MoveIt rejected the pose request. {exc}")
             return False
 
         deadline = time.monotonic() + timeout_sec
@@ -500,7 +500,7 @@ class AutoCalibrationCollector(SampleCollector):
                 return bool(self._moveit.motion_suceeded)
 
         self.get_logger().warn(
-            f"Timed out waiting for calibration move after {timeout_sec:.1f}s."
+            f"Timed out waiting for calibration move after {timeout_sec:.1f} seconds."
         )
         if self._moveit.query_state() == MoveIt2State.EXECUTING:
             self._moveit.cancel_execution()
@@ -532,7 +532,7 @@ class AutoCalibrationCollector(SampleCollector):
         self.recent_frames.clear()
         if not self.wait_for_detected_target(capture_timeout_sec):
             self.get_logger().warn(
-                f"No calibration target detected within {capture_timeout_sec:.1f}s."
+                f"No calibration target was detected within {capture_timeout_sec:.1f} seconds."
             )
             return False
 
@@ -645,12 +645,12 @@ def confirm_motion(
     move_frame: str,
     move_target_link: str,
 ):
-    print("Source poses: hardcoded ChArUco calibration pose list")
-    print(f"Output session: {output_session_dir}")
-    print(f"Pose count: {len(poses)}")
-    print(f"Move frame: {move_frame}")
-    print(f"Move target link: {move_target_link}")
-    print(f"Velocity/acceleration scale: {args.velocity_scale}, {args.acceleration_scale}")
+    print("Using the hardcoded ChArUco calibration poses.")
+    print(f"Saving samples in {output_session_dir}.")
+    print(f"Pose count is {len(poses)}.")
+    print(f"Move frame is {move_frame}.")
+    print(f"Move target link is {move_target_link}.")
+    print(f"Velocity and acceleration scale are {args.velocity_scale}, {args.acceleration_scale}.")
     print("Existing samples in the output session will be replaced.")
 
     if args.dry_run:
@@ -658,8 +658,8 @@ def confirm_motion(
             pose = sample["base_T_tool"]
             xyz = pose["translation_xyz"]
             print(
-                f"index={sample.get('index')} "
-                f"xyz=({xyz[0]:.3f}, {xyz[1]:.3f}, {xyz[2]:.3f})"
+                f"Sample {sample.get('index')}. "
+                f"Position {xyz[0]:.3f}, {xyz[1]:.3f}, {xyz[2]:.3f}."
             )
         return
 
@@ -669,9 +669,9 @@ def confirm_motion(
     print()
     print("The robot will move automatically through these saved poses.")
     print("Keep the emergency stop reachable and make sure the workspace is clear.")
-    answer = input("Type 'yes' to start: ").strip().lower()
+    answer = input("Type yes to start. ").strip().lower()
     if answer != "yes":
-        raise RuntimeError("Aborted before robot motion.")
+        raise RuntimeError("Stopped before robot motion.")
 
 
 def clear_output_samples(session_dir: Path) -> int:
@@ -742,13 +742,13 @@ def main():
     try:
         if not node.wait_for_camera(max(0.1, args.startup_timeout_sec)):
             raise RuntimeError(
-                "Timed out waiting for camera image and camera_info topics."
+                "Timed out waiting for camera image and camera info topics."
             )
 
         for pose_number, sample in enumerate(source_samples, start=1):
             node.get_logger().info(
-                f"Pose {pose_number}/{len(source_samples)} "
-                f"(source index {sample.get('index')})"
+                f"Pose {pose_number} of {len(source_samples)}. "
+                f"Source index {sample.get('index')}."
             )
             moved = node.move_to_saved_pose(
                 pose=sample["base_T_tool"],
@@ -771,7 +771,7 @@ def main():
     finally:
         saved_now = len(node.samples) - saved_count_before
         node.get_logger().info(
-            f"Automatic calibration capture finished. New samples saved: {saved_now}"
+            f"Automatic calibration capture is done. Saved {saved_now} new samples."
         )
         node.print_tf_lookup_summary()
         node.destroy_node()
