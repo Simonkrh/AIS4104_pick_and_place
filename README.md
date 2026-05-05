@@ -137,7 +137,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
 
 ## Useful Services
 
-You can also open a small button panel for the common services, including dice test and sorting start/stop:
+You can also open a small button panel for the services:
 
 ```bash
 python3 tools/pick_service_panel.py
@@ -168,7 +168,7 @@ Move to the current approach pose, then reacquire the target, then recenter the 
 ros2 service call /pick_moveit_executor_node/execute_centered_approach std_srvs/srv/Trigger "{}"
 ```
 
-Move the camera to the search-start pose, point it around with small wrist offsets, then try any configured extra search poses:
+Move the camera to a search pose, point it around with offsets, then try any configured extra search poses:
 
 ```bash
 ros2 service call /pick_moveit_executor_node/search_workspace std_srvs/srv/Trigger "{}"
@@ -226,7 +226,7 @@ calibration/eye_in_hand_charuco/handeye_result.json
 python3 tools/generate_charuco_board.py
 ```
 
-Print the generated board at 100% scale.
+Print the generated board.
 
 ### 2) Collect samples
 
@@ -236,9 +236,9 @@ Start the robot/camera launch first, then run:
 python3 tools/collect_eye_in_hand_samples.py
 ```
 
-Move the robot to different stable poses. Press `s` to save a sample and `q` to quit. Aim for about 15-30 good samples.
+Move the robot to different stable poses. Press `s` to save a sample and `q` to quit. 
 
-Optional automatic capture from hardcoded good poses:
+Optional automatic capture from hardcoded poses:
 
 ```bash
 python3 tools/auto_collect_eye_in_hand_samples.py
