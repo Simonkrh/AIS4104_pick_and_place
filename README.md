@@ -200,12 +200,6 @@ ros2 service call /pick_moveit_executor_node/run_sorting std_srvs/srv/Trigger "{
 ros2 service call /pick_moveit_executor_node/stop_sorting std_srvs/srv/Trigger "{}"
 ```
 
-There is also a small helper script for the ready/start pose:
-
-```bash
-./tools/move_to_start_pose.sh
-```
-
 ## Calibration
 
 The default calibration folder is:
