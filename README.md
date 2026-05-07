@@ -270,7 +270,7 @@ ros2 launch ./launch/pick_and_place.launch.py \
 - `use_realsense`: start a local RealSense camera from this launch.
 - `launch_moveit`: start MoveIt together with the pick-and-place nodes.
 - `moveit_launch_rviz`: start RViz from the MoveIt launch.
-- `image_topic`: RGB image topic used by YOLO and OpenCV.
+- `image_topic`: RGB image topic used by YOLO.
 - `depth_topic`: aligned depth image topic used for 3D localization.
 - `camera_info_topic`: camera info topic used for camera intrinsics.
 - `device`: YOLO device. Use `cpu` or `'"0"'`.
