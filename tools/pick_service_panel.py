@@ -12,7 +12,11 @@ from std_srvs.srv import Trigger
 
 
 SERVICES = [
-    ("move_to_start_pose", "Move to start", "/pick_moveit_executor_node/move_to_start_pose"),
+    (
+        "move_to_start_pose",
+        "Move to start",
+        "/pick_moveit_executor_node/move_to_start_pose",
+    ),
     ("open_gripper", "Open gripper", "/pick_moveit_executor_node/open_gripper"),
     ("close_gripper", "Close gripper", "/pick_moveit_executor_node/close_gripper"),
     ("execute_approach", "Approach", "/pick_moveit_executor_node/execute_approach"),
@@ -204,7 +208,9 @@ class PickServicePanel:
         self.root.mainloop()
 
 
-SERVICES_BY_KEY = {key: (key, label, service_name) for key, label, service_name in SERVICES}
+SERVICES_BY_KEY = {
+    key: (key, label, service_name) for key, label, service_name in SERVICES
+}
 
 
 def main() -> None:

@@ -108,7 +108,10 @@ def main():
     total_width_mm = board_width_mm + 2.0 * args.margin_mm
     total_height_mm = board_height_mm + 2.0 * args.margin_mm
 
-    image_size = (mm_to_px(total_width_mm, args.dpi), mm_to_px(total_height_mm, args.dpi))
+    image_size = (
+        mm_to_px(total_width_mm, args.dpi),
+        mm_to_px(total_height_mm, args.dpi),
+    )
     margin_px = mm_to_px(args.margin_mm, args.dpi)
 
     image = board.generateImage(image_size, marginSize=margin_px, borderBits=1)

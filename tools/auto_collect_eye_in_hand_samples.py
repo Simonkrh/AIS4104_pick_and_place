@@ -410,9 +410,7 @@ class AutoCalibrationCollector(SampleCollector):
         if not self._plan_client.wait_for_service(timeout_sec=moveit_wait_sec):
             self.get_logger().warn("MoveIt planning is not available yet.")
 
-        move_action_client = getattr(
-            self._moveit, "_MoveIt2__move_action_client", None
-        )
+        move_action_client = getattr(self._moveit, "_MoveIt2__move_action_client", None)
         if move_action_client is not None:
             self.get_logger().info(
                 f"Waiting up to {moveit_wait_sec:.1f} seconds for the MoveIt action server."
@@ -433,13 +431,8 @@ class AutoCalibrationCollector(SampleCollector):
             self.get_logger().warn("MoveIt planning is not available.")
             return False
 
-        move_action_client = getattr(
-            self._moveit, "_MoveIt2__move_action_client", None
-        )
-        if (
-            move_action_client is not None
-            and not move_action_client.server_is_ready()
-        ):
+        move_action_client = getattr(self._moveit, "_MoveIt2__move_action_client", None)
+        if move_action_client is not None and not move_action_client.server_is_ready():
             self.get_logger().warn("The MoveIt action server is not available.")
             return False
 
@@ -607,10 +600,13 @@ def build_config(args, source_payload: dict) -> CollectorConfig:
     board_type = str(board.get("type", DEFAULT_BOARD_TYPE))
     aruco_dict = str(board.get("aruco_dict", DEFAULT_ARUCO_DICT))
     if board_type == "charuco" and aruco_dict not in ARUCO_DICTIONARIES:
-        raise ValueError(f"Unsupported ArUco dictionary in source session: {aruco_dict}")
+        raise ValueError(
+            f"Unsupported ArUco dictionary in source session: {aruco_dict}"
+        )
 
     return CollectorConfig(
-        image_topic=args.image_topic or metadata.get("image_topic", DEFAULT_IMAGE_TOPIC),
+        image_topic=args.image_topic
+        or metadata.get("image_topic", DEFAULT_IMAGE_TOPIC),
         camera_info_topic=(
             args.camera_info_topic
             or metadata.get("camera_info_topic", DEFAULT_CAMERA_INFO_TOPIC)
@@ -650,7 +646,9 @@ def confirm_motion(
     print(f"Pose count is {len(poses)}.")
     print(f"Move frame is {move_frame}.")
     print(f"Move target link is {move_target_link}.")
-    print(f"Velocity and acceleration scale are {args.velocity_scale}, {args.acceleration_scale}.")
+    print(
+        f"Velocity and acceleration scale are {args.velocity_scale}, {args.acceleration_scale}."
+    )
     print("Existing samples in the output session will be replaced.")
 
     if args.dry_run:

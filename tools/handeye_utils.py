@@ -19,7 +19,9 @@ METHODS = {
 }
 
 
-def matrix_from_rt(rotation_matrix: np.ndarray, translation_xyz: np.ndarray) -> np.ndarray:
+def matrix_from_rt(
+    rotation_matrix: np.ndarray, translation_xyz: np.ndarray
+) -> np.ndarray:
     matrix = np.eye(4, dtype=np.float64)
     matrix[:3, :3] = np.asarray(rotation_matrix, dtype=np.float64).reshape(3, 3)
     matrix[:3, 3] = np.asarray(translation_xyz, dtype=np.float64).reshape(3)
@@ -38,7 +40,10 @@ def invert_transform(matrix: np.ndarray) -> np.ndarray:
 def pose_dict_from_matrix(matrix: np.ndarray) -> dict:
     return {
         "translation_xyz": matrix[:3, 3].astype(float).tolist(),
-        "quaternion_xyzw": Rotation.from_matrix(matrix[:3, :3]).as_quat().astype(float).tolist(),
+        "quaternion_xyzw": Rotation.from_matrix(matrix[:3, :3])
+        .as_quat()
+        .astype(float)
+        .tolist(),
     }
 
 
@@ -92,7 +97,9 @@ def save_json(path: Path, payload: dict):
         json.dump(payload, handle, indent=2)
 
 
-def build_object_points(board_cols: int, board_rows: int, square_size_m: float) -> np.ndarray:
+def build_object_points(
+    board_cols: int, board_rows: int, square_size_m: float
+) -> np.ndarray:
     points = np.zeros((board_rows * board_cols, 3), dtype=np.float32)
     grid = np.mgrid[0:board_cols, 0:board_rows].T.reshape(-1, 2)
     points[:, :2] = grid * square_size_m
@@ -119,13 +126,15 @@ def evaluate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
             }
         )
 
-    translations = np.asarray([matrix[:3, 3] for matrix in base_t_targets], dtype=np.float64)
+    translations = np.asarray(
+        [matrix[:3, 3] for matrix in base_t_targets], dtype=np.float64
+    )
     translation_mean = translations.mean(axis=0)
     translation_std = translations.std(axis=0)
 
     rotations = Rotation.from_matrix([matrix[:3, :3] for matrix in base_t_targets])
     mean_rotation = rotations.mean()
-    angle_errors_deg = ((mean_rotation.inv() * rotations).magnitude() * 180.0 / math.pi)
+    angle_errors_deg = (mean_rotation.inv() * rotations).magnitude() * 180.0 / math.pi
     translation_error_vectors = translations - translation_mean
     translation_errors_m = np.linalg.norm(translation_error_vectors, axis=1)
 
@@ -135,7 +144,12 @@ def evaluate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
     orientation_scale = max(orientation_std_deg, 1e-9)
 
     sample_errors = []
-    for sample_ref, translation_error_vector, translation_error_m, orientation_error_deg in zip(
+    for (
+        sample_ref,
+        translation_error_vector,
+        translation_error_m,
+        orientation_error_deg,
+    ) in zip(
         sample_refs,
         translation_error_vectors,
         translation_errors_m,
@@ -148,7 +162,9 @@ def evaluate_solution(samples: list[dict], tool_t_camera: np.ndarray) -> dict:
         sample_errors.append(
             {
                 **sample_ref,
-                "translation_error_xyz_m": translation_error_vector.astype(float).tolist(),
+                "translation_error_xyz_m": translation_error_vector.astype(
+                    float
+                ).tolist(),
                 "translation_error_m": float(translation_error_m),
                 "orientation_error_deg": float(orientation_error_deg),
                 "ranking_score": float(ranking_score),

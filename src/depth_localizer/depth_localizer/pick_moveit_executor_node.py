@@ -84,10 +84,6 @@ class PickMoveItExecutorNode(Node):
             "dice_drop_joint_positions_deg",
             [-80.0, -120.0, 0.0, -140.0, 90.0, 190.0],
         )
-        self.declare_parameter(
-            "dice_repick_joint_positions_deg",
-            [-80.0, -105.0, 0.0, -163.0, 90.0, 190.0],
-        )
         self.declare_parameter("dice_repick_wait_sec", 2.0)
         self.declare_parameter(
             "search_start_joint_positions_deg",
@@ -150,9 +146,7 @@ class PickMoveItExecutorNode(Node):
         self.grasp_acceleration_scaling = self._clamp_speed_scaling(
             float(self.get_parameter("grasp_acceleration_scaling").value)
         )
-        self.prefer_elbow_up_ik = bool(
-            self.get_parameter("prefer_elbow_up_ik").value
-        )
+        self.prefer_elbow_up_ik = bool(self.get_parameter("prefer_elbow_up_ik").value)
         self.elbow_up_seed_rad = math.radians(
             float(self.get_parameter("elbow_up_seed_deg").value)
         )
@@ -170,13 +164,6 @@ class PickMoveItExecutorNode(Node):
         )
         self.dice_drop_joint_positions_rad = [
             math.radians(value) for value in self.dice_drop_joint_positions_deg
-        ]
-        self.dice_repick_joint_positions_deg = self._parse_joint_positions_deg(
-            self.get_parameter("dice_repick_joint_positions_deg").value,
-            "dice_repick_joint_positions_deg",
-        )
-        self.dice_repick_joint_positions_rad = [
-            math.radians(value) for value in self.dice_repick_joint_positions_deg
         ]
         self.dice_repick_wait_sec = max(
             float(self.get_parameter("dice_repick_wait_sec").value), 0.0
@@ -392,7 +379,9 @@ class PickMoveItExecutorNode(Node):
 
         self.get_logger().info(f"Reading approach poses from {self.approach_topic}.")
         self.get_logger().info(f"Reading grasp poses from {self.grasp_topic}.")
-        self.get_logger().info(f"Reading target classes from {self.target_class_topic}.")
+        self.get_logger().info(
+            f"Reading target classes from {self.target_class_topic}."
+        )
         self.get_logger().info(
             f"Reading YOLO detections from {self.yolo_detection_topic}."
         )
@@ -412,9 +401,8 @@ class PickMoveItExecutorNode(Node):
             f"Dice drop joints in degrees are {self.dice_drop_joint_positions_deg}."
         )
         self.get_logger().info(
-            f"Dice re pick joints in degrees are {self.dice_repick_joint_positions_deg}."
+            f"Dice re pick wait is {self.dice_repick_wait_sec:.2f} s."
         )
-        self.get_logger().info(f"Dice re pick wait is {self.dice_repick_wait_sec:.2f} s.")
         self.get_logger().info(
             f"Search start joints in degrees are {self.search_start_joint_positions_deg}."
         )
@@ -458,7 +446,9 @@ class PickMoveItExecutorNode(Node):
             f"xy step {self.approach_fallback_xy_step:.3f} m, "
             f"z step {self.approach_fallback_z_step:.3f} m."
         )
-        self.get_logger().info(f"Sending gripper scripts to {self.robot_ip} on port 30002.")
+        self.get_logger().info(
+            f"Sending gripper scripts to {self.robot_ip} on port 30002."
+        )
 
     def _parse_joint_positions_deg(self, value, parameter_name: str) -> list[float]:
         if isinstance(value, str):
@@ -684,7 +674,9 @@ class PickMoveItExecutorNode(Node):
     def _current_joint_positions(self, joint_names: list[str]) -> Optional[list[float]]:
         joint_state = self._moveit.joint_state
         if joint_state is None:
-            self.get_logger().warn("I do not have a joint state yet. Using the requested angles.")
+            self.get_logger().warn(
+                "I do not have a joint state yet. Using the requested angles."
+            )
             return None
 
         positions_by_name = {
@@ -770,9 +762,7 @@ class PickMoveItExecutorNode(Node):
         summary = ", ".join(
             f"{name} {math.degrees(delta):.1f} deg" for name, delta in excessive
         )
-        self.get_logger().debug(
-            f"Skipping {label}. It would move too far. {summary}."
-        )
+        self.get_logger().debug(f"Skipping {label}. It would move too far. {summary}.")
         return True
 
     def _pose_is_fresh(self, received_ns: Optional[int], label: str) -> bool:
@@ -844,15 +834,15 @@ class PickMoveItExecutorNode(Node):
             force = 80
         elif label == "close":
             width = 0.0
-            force = 31
+            force = 30
         else:
             return False, f"I do not know the gripper command {label}."
 
-        script = f"""sec codex_{label}():
-  on_tool_xmlrpc = rpc_factory("xmlrpc", "http://localhost:41414")
-  on_tool_xmlrpc.twofg_grip_external(0, {width}, {force}, 100)
-end
-"""
+        script = f"""sec gripper_{label}():
+            on_tool_xmlrpc = rpc_factory("xmlrpc", "http://localhost:41414")
+            on_tool_xmlrpc.twofg_grip_external(0, {width}, {force}, 100)
+            end
+            """
 
         try:
             with socket.create_connection(
@@ -886,7 +876,9 @@ end
 
         return [positions_by_name[name] for name in joint_names]
 
-    def _ik_seed_candidates(self, joint_names: list[str]) -> list[Optional[list[float]]]:
+    def _ik_seed_candidates(
+        self, joint_names: list[str]
+    ) -> list[Optional[list[float]]]:
         current_positions = self._current_joint_positions(joint_names)
         if current_positions is None:
             return [None]
@@ -943,7 +935,9 @@ end
         if future is None:
             return None
         if not self._wait_for_future(future, self.IK_WAIT_SECONDS):
-            self.get_logger().warn(f"IK timed out after {self.IK_WAIT_SECONDS:.1f} seconds.")
+            self.get_logger().warn(
+                f"IK timed out after {self.IK_WAIT_SECONDS:.1f} seconds."
+            )
             return None
 
         ik_joint_state = self._moveit.get_compute_ik_result(future)
@@ -1095,8 +1089,7 @@ end
         ]
         if missing_joint_names:
             self.get_logger().debug(
-                "The backup pose plan is missing "
-                f"{', '.join(missing_joint_names)}."
+                f"The backup pose plan is missing {', '.join(missing_joint_names)}."
             )
             return False
 
@@ -1273,7 +1266,9 @@ end
                             f"{label.capitalize()} worked with nearby pose.",
                         )
 
-                    last_failure_message = f"{label.capitalize()} did not finish{candidate_label}."
+                    last_failure_message = (
+                        f"{label.capitalize()} did not finish{candidate_label}."
+                    )
         except Exception as exc:
             return False, f"MoveIt had a problem during {label}. {exc}"
 

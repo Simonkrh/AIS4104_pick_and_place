@@ -170,7 +170,9 @@ class SampleCollector(Node):
             )
 
         if config.board_type == "charuco":
-            existing_marker_size = float(existing_board.get("marker_size_m", 0.0) or 0.0)
+            existing_marker_size = float(
+                existing_board.get("marker_size_m", 0.0) or 0.0
+            )
             requested_marker_size = float(config.marker_size_m or 0.0)
             if abs(existing_marker_size - requested_marker_size) > 1e-9:
                 mismatches.append(
@@ -288,9 +290,7 @@ class SampleCollector(Node):
                 30,
                 0.001,
             )
-            corners = cv2.cornerSubPix(
-                variant, corners, (11, 11), (-1, -1), criteria
-            )
+            corners = cv2.cornerSubPix(variant, corners, (11, 11), (-1, -1), criteria)
             return True, corners, pattern_size
 
         return False, None, None
@@ -469,7 +469,10 @@ class SampleCollector(Node):
                     "TF lookup fell back to latest transform instead of image timestamp. "
                     f"Exact lookup error: {detail}",
                 )
-            return False, "TF lookup fell back to latest transform instead of image timestamp."
+            return (
+                False,
+                "TF lookup fell back to latest transform instead of image timestamp.",
+            )
         if abs(tf_lookup["delta_ms"]) > self.config.max_tf_delta_ms:
             return (
                 False,
@@ -588,7 +591,8 @@ class SampleCollector(Node):
             return
 
         sample_index = (
-            max((int(sample.get("index", -1)) for sample in self.samples), default=-1) + 1
+            max((int(sample.get("index", -1)) for sample in self.samples), default=-1)
+            + 1
         )
         image_path = self.images_dir / f"sample_{sample_index:04d}.png"
         overlay_image_path = self.images_dir / f"sample_{sample_index:04d}_overlay.png"
@@ -709,9 +713,7 @@ def parse_args():
         )
     )
     parser.add_argument("--image-topic", default=DEFAULT_IMAGE_TOPIC)
-    parser.add_argument(
-        "--camera-info-topic", default=DEFAULT_CAMERA_INFO_TOPIC
-    )
+    parser.add_argument("--camera-info-topic", default=DEFAULT_CAMERA_INFO_TOPIC)
     parser.add_argument("--base-frame", default=DEFAULT_BASE_FRAME)
     parser.add_argument("--tool-frame", default=DEFAULT_TOOL_FRAME)
     parser.add_argument(

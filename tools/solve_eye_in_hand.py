@@ -124,12 +124,14 @@ def main():
     failures = []
     for method_name, method in METHODS.items():
         try:
-            rotation_camera_to_gripper, translation_camera_to_gripper = cv2.calibrateHandEye(
-                rotations_gripper_to_base,
-                translations_gripper_to_base,
-                rotations_target_to_camera,
-                translations_target_to_camera,
-                method=method,
+            rotation_camera_to_gripper, translation_camera_to_gripper = (
+                cv2.calibrateHandEye(
+                    rotations_gripper_to_base,
+                    translations_gripper_to_base,
+                    rotations_target_to_camera,
+                    translations_target_to_camera,
+                    method=method,
+                )
             )
         except cv2.error as exc:
             failures.append({"method": method_name, "error": str(exc)})
@@ -154,7 +156,9 @@ def main():
         )
 
     if not results:
-        raise RuntimeError("All OpenCV hand-eye methods failed. The sample set is likely poor.")
+        raise RuntimeError(
+            "All OpenCV hand-eye methods failed. The sample set is maybe poor."
+        )
 
     best_result = min(
         results,
@@ -257,7 +261,10 @@ def main():
             print(f"Wrote pruned sample file to {prune_output}.")
         print(
             "Removed sample indices.",
-            [sample_error["index"] for sample_error in best_sample_ranking[:prune_worst]],
+            [
+                sample_error["index"]
+                for sample_error in best_sample_ranking[:prune_worst]
+            ],
         )
 
 

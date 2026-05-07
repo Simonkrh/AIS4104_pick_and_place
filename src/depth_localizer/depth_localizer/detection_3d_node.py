@@ -180,25 +180,23 @@ class Detection3DNode(Node):
             u = int(round(det.bbox.center.position.x * scale_u))
             v = int(round(det.bbox.center.position.y * scale_v))
             bbox_half_width = int(
-                round(0.5 * float(det.bbox.size_x) * scale_u * self.bbox_depth_roi_scale)
+                round(
+                    0.5 * float(det.bbox.size_x) * scale_u * self.bbox_depth_roi_scale
+                )
             )
             bbox_half_height = int(
-                round(0.5 * float(det.bbox.size_y) * scale_v * self.bbox_depth_roi_scale)
+                round(
+                    0.5 * float(det.bbox.size_y) * scale_v * self.bbox_depth_roi_scale
+                )
             )
             center_bbox_half_width = int(
                 round(
-                    0.5
-                    * float(det.bbox.size_x)
-                    * scale_u
-                    * self.center_depth_roi_scale
+                    0.5 * float(det.bbox.size_x) * scale_u * self.center_depth_roi_scale
                 )
             )
             center_bbox_half_height = int(
                 round(
-                    0.5
-                    * float(det.bbox.size_y)
-                    * scale_v
-                    * self.center_depth_roi_scale
+                    0.5 * float(det.bbox.size_y) * scale_v * self.center_depth_roi_scale
                 )
             )
             half_width = max(self.roi_half_size, bbox_half_width)

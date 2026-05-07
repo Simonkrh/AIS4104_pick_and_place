@@ -85,13 +85,6 @@ def generate_launch_description():
             DeclareLaunchArgument("depth_center_min_valid_pixels", default_value="8"),
             DeclareLaunchArgument("depth_fallback_roi_scale", default_value="0.80"),
             DeclareLaunchArgument("depth_fallback_percentile", default_value="10.0"),
-            DeclareLaunchArgument("best_pose_filter_window_size", default_value="1"),
-            DeclareLaunchArgument(
-                "best_pose_jump_rejection_distance", default_value="0.03"
-            ),
-            DeclareLaunchArgument(
-                "best_pose_jump_rejection_hold_sec", default_value="0.0"
-            ),
             DeclareLaunchArgument("pick_approach_offset_z", default_value="0.1"),
             DeclareLaunchArgument("pick_grasp_offset_z", default_value="-0.02"),
             DeclareLaunchArgument(
@@ -175,13 +168,6 @@ def generate_launch_description():
                 ],
             ),
             Node(
-                package="opencv_processor",
-                executable="opencv_edges_node",
-                name="opencv_edges_node",
-                output="screen",
-                parameters=[{"image_topic": image_topic}],
-            ),
-            Node(
                 package="depth_localizer",
                 executable="detection_3d_node",
                 name="detection_3d_node",
@@ -236,26 +222,6 @@ def generate_launch_description():
                 executable="detection_3d_transform_node",
                 name="detection_3d_transform_node",
                 output="screen",
-                parameters=[
-                    {
-                        "best_pose_filter_window_size": ParameterValue(
-                            LaunchConfiguration("best_pose_filter_window_size"),
-                            value_type=int,
-                        )
-                    },
-                    {
-                        "best_pose_jump_rejection_distance": ParameterValue(
-                            LaunchConfiguration("best_pose_jump_rejection_distance"),
-                            value_type=float,
-                        )
-                    },
-                    {
-                        "best_pose_jump_rejection_hold_sec": ParameterValue(
-                            LaunchConfiguration("best_pose_jump_rejection_hold_sec"),
-                            value_type=float,
-                        )
-                    },
-                ],
             ),
             Node(
                 package="depth_localizer",
