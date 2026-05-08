@@ -24,11 +24,7 @@ try:
     from .pick_executor.pose_utils import PoseUtilsMixin
     from .pick_executor.search_controller import SearchControllerMixin
     from .pick_executor.sorting_pipeline import SortingPipelineMixin
-<<<<<<< HEAD
     from .pick_executor.dice_test_executor import DiceTestMixin
-=======
-    from .pick_executor.routine_executor import TestRoutinesMixin
->>>>>>> e9cca8048b0b030c9accd37dbf6a00126b1747d1
 except ImportError:
     from pick_executor.gripper_controller import GripperControllerMixin
     from pick_executor.motion_executor import MotionExecutorMixin
@@ -36,11 +32,7 @@ except ImportError:
     from pick_executor.pose_utils import PoseUtilsMixin
     from pick_executor.search_controller import SearchControllerMixin
     from pick_executor.sorting_pipeline import SortingPipelineMixin
-<<<<<<< HEAD
     from pick_executor.dice_test_executor import DiceTestMixin
-=======
-    from pick_executor.routine_executor import TestRoutinesMixin
->>>>>>> e9cca8048b0b030c9accd37dbf6a00126b1747d1
 
 
 class PickMoveItExecutorNode(
@@ -50,11 +42,7 @@ class PickMoveItExecutorNode(
     SearchControllerMixin,
     PickPipelineMixin,
     SortingPipelineMixin,
-<<<<<<< HEAD
     DiceTestMixin,
-=======
-    TestRoutinesMixin,
->>>>>>> e9cca8048b0b030c9accd37dbf6a00126b1747d1
     Node,
 ):
     GROUP_NAME = "ur_manipulator"
